@@ -9,8 +9,9 @@ export const SocketProvider = ({ children }) => {
   const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    // Connect to the Socket.io server running on port 5000
-    const newSocket = io('http://localhost:5000', {
+    // Connect to the Socket.io server running on port 5000 (dynamic hostname for multi-device access)
+    const socketHost = window.location.hostname || 'localhost';
+    const newSocket = io(`http://${socketHost}:5000`, {
       transports: ['websocket', 'polling']
     });
 

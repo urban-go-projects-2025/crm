@@ -1089,6 +1089,6 @@ if (fs.existsSync(distPath)) {
 
 
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0',() => {
   console.log(`🚀 OMW CRM Server listening on http://localhost:${PORT}`);
 });
