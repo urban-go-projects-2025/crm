@@ -1,5 +1,8 @@
 // API Integration Layer for OMW CRM Frontend
 
+const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const apiUrl = (path) => `${API_BASE}${path}`;
+
 const getHeaders = () => {
   return {
     'Content-Type': 'application/json'
@@ -7,20 +10,20 @@ const getHeaders = () => {
 };
 
 export const fetchDashboardStats = async () => {
-  const res = await fetch('/api/dashboard/stats', { headers: getHeaders() });
+  const res = await fetch(apiUrl('/api/dashboard/stats'), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch dashboard stats');
   return res.json();
 };
 
 export const fetchCustomers = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(`/api/customers?${query}`, { headers: getHeaders() });
+  const res = await fetch(apiUrl(`/api/customers?${query}`), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch customers');
   return res.json();
 };
 
 export const createCustomer = async (data) => {
-  const res = await fetch('/api/customers', {
+  const res = await fetch(apiUrl('/api/customers'), {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(data)
@@ -31,13 +34,13 @@ export const createCustomer = async (data) => {
 
 export const fetchWorkers = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(`/api/workers?${query}`, { headers: getHeaders() });
+  const res = await fetch(apiUrl(`/api/workers?${query}`), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch workers');
   return res.json();
 };
 
 export const createWorker = async (data) => {
-  const res = await fetch('/api/workers', {
+  const res = await fetch(apiUrl('/api/workers'), {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(data)
@@ -48,13 +51,13 @@ export const createWorker = async (data) => {
 
 export const fetchBookings = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(`/api/bookings?${query}`, { headers: getHeaders() });
+  const res = await fetch(apiUrl(`/api/bookings?${query}`), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch bookings');
   return res.json();
 };
 
 export const createBooking = async (data) => {
-  const res = await fetch('/api/bookings', {
+  const res = await fetch(apiUrl('/api/bookings'), {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(data)
@@ -64,7 +67,7 @@ export const createBooking = async (data) => {
 };
 
 export const updateBookingStatus = async (id, payload) => {
-  const res = await fetch(`/api/bookings/${id}/status`, {
+  const res = await fetch(apiUrl(`/api/bookings/${id}/status`), {
     method: 'PUT',
     headers: getHeaders(),
     body: JSON.stringify(payload)
@@ -75,19 +78,19 @@ export const updateBookingStatus = async (id, payload) => {
 
 export const fetchPayments = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(`/api/payments?${query}`, { headers: getHeaders() });
+  const res = await fetch(apiUrl(`/api/payments?${query}`), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch payments');
   return res.json();
 };
 
 export const fetchSupportTickets = async () => {
-  const res = await fetch('/api/support-tickets', { headers: getHeaders() });
+  const res = await fetch(apiUrl('/api/support-tickets'), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch support tickets');
   return res.json();
 };
 
 export const createSupportTicket = async (data) => {
-  const res = await fetch('/api/support-tickets', {
+  const res = await fetch(apiUrl('/api/support-tickets'), {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(data)
@@ -97,7 +100,7 @@ export const createSupportTicket = async (data) => {
 };
 
 export const resolveSupportTicket = async (id, resolutionNotes) => {
-  const res = await fetch(`/api/support-tickets/${id}/resolve`, {
+  const res = await fetch(apiUrl(`/api/support-tickets/${id}/resolve`), {
     method: 'PUT',
     headers: getHeaders(),
     body: JSON.stringify({ resolutionNotes })
@@ -107,20 +110,20 @@ export const resolveSupportTicket = async (id, resolutionNotes) => {
 };
 
 export const fetchAnalytics = async () => {
-  const res = await fetch('/api/analytics', { headers: getHeaders() });
+  const res = await fetch(apiUrl('/api/analytics'), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch analytics');
   return res.json();
 };
 
 export const triggerDatabaseSync = async () => {
-  const res = await fetch('/api/sync/trigger', { method: 'POST', headers: getHeaders() });
+  const res = await fetch(apiUrl('/api/sync/trigger'), { method: 'POST', headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to sync database');
   return res.json();
 };
 
 export const loginUser = async (email, password, type) => {
   const endpoint = type === 'admin' ? '/api/auth/admin-login' : '/api/auth/user-login';
-  const res = await fetch(endpoint, {
+  const res = await fetch(apiUrl(endpoint), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
@@ -135,7 +138,7 @@ export const loginUser = async (email, password, type) => {
 };
 
 export const switchUserAccount = async (userId) => {
-  const res = await fetch('/api/auth/impersonate', {
+  const res = await fetch(apiUrl('/api/auth/impersonate'), {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify({ userId })
@@ -150,24 +153,24 @@ export const switchUserAccount = async (userId) => {
 };
 
 export const logoutUser = async () => {
-  const res = await fetch('/api/auth/logout', { method: 'POST', headers: getHeaders() });
+  const res = await fetch(apiUrl('/api/auth/logout'), { method: 'POST', headers: getHeaders() });
   return await res.json();
 };
 
 export const fetchMe = async () => {
-  const res = await fetch('/api/auth/me', { headers: getHeaders() });
+  const res = await fetch(apiUrl('/api/auth/me'), { headers: getHeaders() });
   if (!res.ok) throw new Error('Not authenticated');
   return await res.json();
 };
 
 export const fetchLeaveRequests = async () => {
-  const res = await fetch(`/api/attendance/leaves?t=${Date.now()}`, { headers: getHeaders() });
+  const res = await fetch(apiUrl(`/api/attendance/leaves?t=${Date.now()}`), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch leave requests');
   return await res.json();
 };
 
 export const createLeaveRequest = async (leaveData) => {
-  const res = await fetch('/api/attendance/leaves', {
+  const res = await fetch(apiUrl('/api/attendance/leaves'), {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(leaveData)
@@ -177,7 +180,7 @@ export const createLeaveRequest = async (leaveData) => {
 };
 
 export const updateLeaveStatus = async (id, status) => {
-  const res = await fetch(`/api/attendance/leaves/${id}/status`, {
+  const res = await fetch(apiUrl(`/api/attendance/leaves/${id}/status`), {
     method: 'PUT',
     headers: getHeaders(),
     body: JSON.stringify({ status })
@@ -187,13 +190,13 @@ export const updateLeaveStatus = async (id, status) => {
 };
 
 export const fetchAttendanceLogs = async () => {
-  const res = await fetch(`/api/attendance/logs?t=${Date.now()}`, { headers: getHeaders() });
+  const res = await fetch(apiUrl(`/api/attendance/logs?t=${Date.now()}`), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch attendance logs');
   return await res.json();
 };
 
 export const markAttendance = async (data) => {
-  const res = await fetch('/api/attendance/mark', {
+  const res = await fetch(apiUrl('/api/attendance/mark'), {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(data)
@@ -203,13 +206,13 @@ export const markAttendance = async (data) => {
 };
 
 export const fetchCrmUsers = async () => {
-  const res = await fetch('/api/crm-users', { headers: getHeaders() });
+  const res = await fetch(apiUrl('/api/crm-users'), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch CRM users');
   return await res.json();
 };
 
 export const createCrmUser = async (data) => {
-  const res = await fetch('/api/crm-users', {
+  const res = await fetch(apiUrl('/api/crm-users'), {
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(data)
@@ -222,7 +225,7 @@ export const createCrmUser = async (data) => {
 };
 
 export const updateCrmUser = async (id, data) => {
-  const res = await fetch(`/api/crm-users/${id}`, {
+  const res = await fetch(apiUrl(`/api/crm-users/${id}`), {
     method: 'PUT',
     headers: getHeaders(),
     body: JSON.stringify(data)
@@ -235,7 +238,7 @@ export const updateCrmUser = async (id, data) => {
 };
 
 export const deleteCrmUser = async (id) => {
-  const res = await fetch(`/api/crm-users/${id}`, {
+  const res = await fetch(apiUrl(`/api/crm-users/${id}`), {
     method: 'DELETE',
     headers: getHeaders()
   });
@@ -247,7 +250,7 @@ export const deleteCrmUser = async (id) => {
 };
 
 export const fetchActivityLogs = async (userId) => {
-  const res = await fetch(`/api/activity-logs/${userId}?t=${Date.now()}`, { headers: getHeaders() });
+  const res = await fetch(apiUrl(`/api/activity-logs/${userId}?t=${Date.now()}`), { headers: getHeaders() });
   if (!res.ok) throw new Error('Failed to fetch activity logs');
   return await res.json();
 };
