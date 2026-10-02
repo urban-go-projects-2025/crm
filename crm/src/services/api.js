@@ -9,17 +9,34 @@ const getHeaders = () => {
   };
 };
 
+const parseResponse = async (res, defaultError = 'Request failed') => {
+  const contentType = res.headers.get('content-type') || '';
+  const isJson = contentType.includes('application/json');
+
+  if (!res.ok) {
+    if (isJson) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.error || defaultError);
+    }
+    throw new Error(defaultError);
+  }
+
+  if (!isJson) {
+    throw new Error(`${defaultError}: Non-JSON response received`);
+  }
+
+  return await res.json();
+};
+
 export const fetchDashboardStats = async () => {
   const res = await fetch(apiUrl('/api/dashboard/stats'), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch dashboard stats');
-  return res.json();
+  return parseResponse(res, 'Failed to fetch dashboard stats');
 };
 
 export const fetchCustomers = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
   const res = await fetch(apiUrl(`/api/customers?${query}`), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch customers');
-  return res.json();
+  return parseResponse(res, 'Failed to fetch customers');
 };
 
 export const createCustomer = async (data) => {
@@ -28,15 +45,13 @@ export const createCustomer = async (data) => {
     headers: getHeaders(),
     body: JSON.stringify(data)
   });
-  if (!res.ok) throw new Error('Failed to create customer');
-  return res.json();
+  return parseResponse(res, 'Failed to create customer');
 };
 
 export const fetchWorkers = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
   const res = await fetch(apiUrl(`/api/workers?${query}`), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch workers');
-  return res.json();
+  return parseResponse(res, 'Failed to fetch workers');
 };
 
 export const createWorker = async (data) => {
@@ -45,15 +60,13 @@ export const createWorker = async (data) => {
     headers: getHeaders(),
     body: JSON.stringify(data)
   });
-  if (!res.ok) throw new Error('Failed to create worker');
-  return res.json();
+  return parseResponse(res, 'Failed to create worker');
 };
 
 export const fetchBookings = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
   const res = await fetch(apiUrl(`/api/bookings?${query}`), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch bookings');
-  return res.json();
+  return parseResponse(res, 'Failed to fetch bookings');
 };
 
 export const createBooking = async (data) => {
@@ -62,8 +75,7 @@ export const createBooking = async (data) => {
     headers: getHeaders(),
     body: JSON.stringify(data)
   });
-  if (!res.ok) throw new Error('Failed to create booking');
-  return res.json();
+  return parseResponse(res, 'Failed to create booking');
 };
 
 export const updateBookingStatus = async (id, payload) => {
@@ -72,21 +84,18 @@ export const updateBookingStatus = async (id, payload) => {
     headers: getHeaders(),
     body: JSON.stringify(payload)
   });
-  if (!res.ok) throw new Error('Failed to update booking status');
-  return res.json();
+  return parseResponse(res, 'Failed to update booking status');
 };
 
 export const fetchPayments = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
   const res = await fetch(apiUrl(`/api/payments?${query}`), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch payments');
-  return res.json();
+  return parseResponse(res, 'Failed to fetch payments');
 };
 
 export const fetchSupportTickets = async () => {
   const res = await fetch(apiUrl('/api/support-tickets'), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch support tickets');
-  return res.json();
+  return parseResponse(res, 'Failed to fetch support tickets');
 };
 
 export const createSupportTicket = async (data) => {
@@ -95,8 +104,7 @@ export const createSupportTicket = async (data) => {
     headers: getHeaders(),
     body: JSON.stringify(data)
   });
-  if (!res.ok) throw new Error('Failed to create ticket');
-  return res.json();
+  return parseResponse(res, 'Failed to create ticket');
 };
 
 export const resolveSupportTicket = async (id, resolutionNotes) => {
@@ -105,20 +113,17 @@ export const resolveSupportTicket = async (id, resolutionNotes) => {
     headers: getHeaders(),
     body: JSON.stringify({ resolutionNotes })
   });
-  if (!res.ok) throw new Error('Failed to resolve ticket');
-  return res.json();
+  return parseResponse(res, 'Failed to resolve ticket');
 };
 
 export const fetchAnalytics = async () => {
   const res = await fetch(apiUrl('/api/analytics'), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch analytics');
-  return res.json();
+  return parseResponse(res, 'Failed to fetch analytics');
 };
 
 export const triggerDatabaseSync = async () => {
   const res = await fetch(apiUrl('/api/sync/trigger'), { method: 'POST', headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to sync database');
-  return res.json();
+  return parseResponse(res, 'Failed to sync database');
 };
 
 export const loginUser = async (email, password, type) => {
@@ -128,13 +133,7 @@ export const loginUser = async (email, password, type) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
   });
-  
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Invalid Email or Password');
-  }
-  
-  return await res.json();
+  return parseResponse(res, 'Invalid Email or Password');
 };
 
 export const switchUserAccount = async (userId) => {
@@ -143,30 +142,22 @@ export const switchUserAccount = async (userId) => {
     headers: getHeaders(),
     body: JSON.stringify({ userId })
   });
-  
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || `HTTP ${res.status}: Failed to switch user account`);
-  }
-  
-  return await res.json();
+  return parseResponse(res, 'Failed to switch user account');
 };
 
 export const logoutUser = async () => {
   const res = await fetch(apiUrl('/api/auth/logout'), { method: 'POST', headers: getHeaders() });
-  return await res.json();
+  return parseResponse(res, 'Failed to logout');
 };
 
 export const fetchMe = async () => {
   const res = await fetch(apiUrl('/api/auth/me'), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Not authenticated');
-  return await res.json();
+  return parseResponse(res, 'Not authenticated');
 };
 
 export const fetchLeaveRequests = async () => {
   const res = await fetch(apiUrl(`/api/attendance/leaves?t=${Date.now()}`), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch leave requests');
-  return await res.json();
+  return parseResponse(res, 'Failed to fetch leave requests');
 };
 
 export const createLeaveRequest = async (leaveData) => {
@@ -175,8 +166,7 @@ export const createLeaveRequest = async (leaveData) => {
     headers: getHeaders(),
     body: JSON.stringify(leaveData)
   });
-  if (!res.ok) throw new Error('Failed to create leave request');
-  return await res.json();
+  return parseResponse(res, 'Failed to create leave request');
 };
 
 export const updateLeaveStatus = async (id, status) => {
@@ -185,14 +175,12 @@ export const updateLeaveStatus = async (id, status) => {
     headers: getHeaders(),
     body: JSON.stringify({ status })
   });
-  if (!res.ok) throw new Error('Failed to update leave status');
-  return await res.json();
+  return parseResponse(res, 'Failed to update leave status');
 };
 
 export const fetchAttendanceLogs = async () => {
   const res = await fetch(apiUrl(`/api/attendance/logs?t=${Date.now()}`), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch attendance logs');
-  return await res.json();
+  return parseResponse(res, 'Failed to fetch attendance logs');
 };
 
 export const markAttendance = async (data) => {
@@ -201,14 +189,12 @@ export const markAttendance = async (data) => {
     headers: getHeaders(),
     body: JSON.stringify(data)
   });
-  if (!res.ok) throw new Error('Failed to mark attendance');
-  return await res.json();
+  return parseResponse(res, 'Failed to mark attendance');
 };
 
 export const fetchCrmUsers = async () => {
   const res = await fetch(apiUrl('/api/crm-users'), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch CRM users');
-  return await res.json();
+  return parseResponse(res, 'Failed to fetch CRM users');
 };
 
 export const createCrmUser = async (data) => {
@@ -217,11 +203,7 @@ export const createCrmUser = async (data) => {
     headers: getHeaders(),
     body: JSON.stringify(data)
   });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to create CRM user');
-  }
-  return await res.json();
+  return parseResponse(res, 'Failed to create CRM user');
 };
 
 export const updateCrmUser = async (id, data) => {
@@ -230,11 +212,7 @@ export const updateCrmUser = async (id, data) => {
     headers: getHeaders(),
     body: JSON.stringify(data)
   });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to update CRM user');
-  }
-  return await res.json();
+  return parseResponse(res, 'Failed to update CRM user');
 };
 
 export const deleteCrmUser = async (id) => {
@@ -242,15 +220,10 @@ export const deleteCrmUser = async (id) => {
     method: 'DELETE',
     headers: getHeaders()
   });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || 'Failed to delete CRM user');
-  }
-  return await res.json();
+  return parseResponse(res, 'Failed to delete CRM user');
 };
 
 export const fetchActivityLogs = async (userId) => {
   const res = await fetch(apiUrl(`/api/activity-logs/${userId}?t=${Date.now()}`), { headers: getHeaders() });
-  if (!res.ok) throw new Error('Failed to fetch activity logs');
-  return await res.json();
+  return parseResponse(res, 'Failed to fetch activity logs');
 };

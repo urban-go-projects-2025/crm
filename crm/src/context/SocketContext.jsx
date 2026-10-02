@@ -18,10 +18,10 @@ export const SocketProvider = ({ children }) => {
     } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
       socketUrl = 'http://localhost:5000';
     } else {
-      // In production (e.g. Vercel) without VITE_SOCKET_URL explicitly set,
-      // default to current host over HTTPS/WSS to avoid Mixed Content errors
-      const protocol = isHttps ? 'https://' : 'http://';
-      socketUrl = `${protocol}${window.location.host}`;
+      // In production (e.g. Vercel) without VITE_SOCKET_URL or VITE_API_URL configured,
+      // skip socket connection to prevent connection retry loops against the static frontend host.
+      console.info('Socket.io disabled: VITE_SOCKET_URL is not configured in Vercel environment variables.');
+      return;
     }
 
     let newSocket;
@@ -30,8 +30,8 @@ export const SocketProvider = ({ children }) => {
         transports: ['websocket', 'polling'],
         secure: isHttps,
         autoConnect: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 3000,
+        reconnectionAttempts: 3,
+        reconnectionDelay: 5000,
       });
 
       newSocket.on('connect_error', (err) => {
