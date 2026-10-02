@@ -18,7 +18,10 @@ const parseResponse = async (res, defaultError = 'Request failed') => {
       const errorData = await res.json().catch(() => ({}));
       throw new Error(errorData.error || defaultError);
     }
-    throw new Error(defaultError);
+    if (res.status === 405) {
+      throw new Error('HTTP 405 Method Not Allowed: Check Vercel backend route configuration.');
+    }
+    throw new Error(`${defaultError} (HTTP ${res.status})`);
   }
 
   if (!isJson) {
