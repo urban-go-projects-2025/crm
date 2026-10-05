@@ -9,11 +9,11 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const pool = mysql.createPool({
-  host: process.env.DB_HOST,
-  port: process.env.DB_PORT,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME,
+  host: '65.1.221.39',
+  port: 3306,
+  user: 'omw_user',
+  password: 'omw-2025',
+  database: 'omw_db',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
