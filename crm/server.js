@@ -237,14 +237,15 @@ app.post('/api/auth/user-login', async (req, res) => {
 
 // JWT Verification Middleware
 const authenticateToken = (req, res, next) => {
-  if (
-    req.url.startsWith('/api/health') || 
-    req.url.startsWith('/api/auth/admin-login') ||
-    req.url.startsWith('/api/auth/user-login') ||
-    req.url.startsWith('/api/auth/logout')
-  ) {
-    return next();
-  }
+if (
+  req.url.startsWith('/api/health') ||
+  req.url.startsWith('/api/db-test') ||
+  req.url.startsWith('/api/auth/admin-login') ||
+  req.url.startsWith('/api/auth/user-login') ||
+  req.url.startsWith('/api/auth/logout')
+) {
+  return next();
+}
 
   // Check cookies first, fallback to Auth header
   const authHeader = req.headers['authorization'];
