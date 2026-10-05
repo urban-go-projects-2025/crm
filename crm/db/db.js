@@ -12,7 +12,7 @@ const pool = mysql.createPool({
   host: '65.1.221.39',
   port: 3306,
   user: 'omw_user',
-  password: 'YOUR_PASSWORD',
+  password: 'omw-2025',
   database: 'omw_db',
   waitForConnections: true,
   connectionLimit: 10,
