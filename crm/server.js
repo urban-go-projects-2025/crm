@@ -102,6 +102,29 @@ const initializeDB = async () => {
 };
 initializeDB();
 
+app.get('/api/db-test', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT 1 AS connected');
+
+    res.json({
+      success: true,
+      database: rows
+    });
+  } catch (error) {
+    console.error('DB TEST ERROR:', error);
+
+    res.status(500).json({
+      success: false,
+      code: error.code,
+      message: error.message,
+      address: error.address,
+      port: error.port
+    });
+  }
+});
+
+
+
 // API Request Logger
 app.use((req, res, next) => {
   if (req.url.startsWith('/api')) {
