@@ -12,11 +12,17 @@ const pool = mysql.createPool({
   host: '65.1.221.39',
   port: 3306,
   user: 'omw_user',
-  password: 'omw-2025',
+  password: 'YOUR_PASSWORD',
   database: 'omw_db',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
 });
+
+console.log(
+  'DATABASE CONFIG:',
+  pool.pool.config.connectionConfig.host,
+  pool.pool.config.connectionConfig.port
+);
 
 export default pool;
