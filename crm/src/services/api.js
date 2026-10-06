@@ -230,3 +230,8 @@ export const fetchActivityLogs = async (userId) => {
   const res = await fetch(apiUrl(`/api/activity-logs/${userId}?t=${Date.now()}`), { headers: getHeaders() });
   return parseResponse(res, 'Failed to fetch activity logs');
 };
+
+export const fetchIndianHolidays = async (year) => {
+  const res = await fetch(apiUrl(`/api/holidays/IN/${year || new Date().getFullYear()}`), { headers: getHeaders() });
+  return parseResponse(res, 'Failed to fetch Indian holidays');
+};

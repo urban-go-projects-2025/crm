@@ -398,11 +398,70 @@ app.put('/api/attendance/leaves/:id/status', authenticateToken, async (req, res)
   }
 });
 
+// Helper to calculate total hours between Check In and Check Out times
+function calculateTotalHours(checkInStr, checkOutStr) {
+  if (!checkInStr || !checkOutStr || checkInStr === '--' || checkOutStr === '--') {
+    return '--';
+  }
+
+  const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr || typeof timeStr !== 'string') return null;
+    const cleanStr = timeStr.trim().toUpperCase();
+    const isPM = cleanStr.includes('PM');
+    const isAM = cleanStr.includes('AM');
+    
+    const timeOnly = cleanStr.replace(/(AM|PM)/g, '').trim();
+    const parts = timeOnly.split(':');
+    if (parts.length < 2) return null;
+    
+    let hours = parseInt(parts[0], 10);
+    let minutes = parseInt(parts[1], 10);
+    
+    if (isNaN(hours) || isNaN(minutes)) return null;
+
+    if (isPM && hours < 12) hours += 12;
+    if (isAM && hours === 12) hours = 0;
+
+    return hours * 60 + minutes;
+  };
+
+  const startMins = parseTimeToMinutes(checkInStr);
+  const endMins = parseTimeToMinutes(checkOutStr);
+
+  if (startMins === null || endMins === null) {
+    return '--';
+  }
+
+  let diffMins = endMins - startMins;
+  if (diffMins < 0) {
+    diffMins += 24 * 60;
+  }
+
+  if (diffMins === 0) return '0.0 hrs';
+  
+  const hrs = (diffMins / 60).toFixed(1);
+  if (hrs === '0.0' && diffMins > 0) {
+    return `${diffMins} mins`;
+  }
+  return `${hrs} hrs`;
+}
+
 // GET Attendance Logs
 app.get('/api/attendance/logs', authenticateToken, async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT * FROM attendance_logs ORDER BY id DESC');
-    res.json({ logs: rows });
+    const logs = rows.map(log => {
+      let totalHours = log.total_hours;
+      if (!totalHours || totalHours === 'Calculated' || (log.check_in && log.check_out && log.check_out !== '--' && totalHours === '--')) {
+        totalHours = calculateTotalHours(log.check_in, log.check_out);
+        pool.query('UPDATE attendance_logs SET total_hours = ? WHERE id = ?', [totalHours, log.id]).catch(() => {});
+      }
+      return {
+        ...log,
+        total_hours: totalHours
+      };
+    });
+    res.json({ logs });
   } catch (err) {
     console.error('Get attendance logs error:', err);
     res.status(500).json({ error: 'Failed to fetch attendance logs' });
@@ -420,10 +479,9 @@ app.post('/api/attendance/mark', authenticateToken, async (req, res) => {
         [workerId || null, workerName, date, 'Present', time, '--', '--']
       );
       if (req.user) { logActivity(req.user.id, req.user.name, 'Mark Attendance', 'Action: ' + actionType); }
-    res.json({ success: true, id: result.insertId });
-    if (req.app.get('io')) { req.app.get('io').emit('attendance_updated'); }
+      res.json({ success: true, id: result.insertId });
+      if (req.app.get('io')) { req.app.get('io').emit('attendance_updated'); }
     } else if (actionType === 'Check Out') {
-      // Fetch existing log to calculate total hours (Optional basic calculation)
       const [rows] = await pool.query(
         "SELECT * FROM attendance_logs WHERE worker_name = ? AND date = ? AND check_out = '--' ORDER BY id DESC LIMIT 1",
         [workerName, date]
@@ -434,14 +492,17 @@ app.post('/api/attendance/mark', authenticateToken, async (req, res) => {
       }
       
       const logId = rows[0].id;
+      const checkInTime = rows[0].check_in;
+      const totalHours = calculateTotalHours(checkInTime, time);
       
-      // Update the record
       await pool.query(
         'UPDATE attendance_logs SET check_out = ?, total_hours = ? WHERE id = ?',
-        [time, 'Calculated', logId] // Note: To calculate real hours, we need Date parsing. Using placeholder for now.
+        [time, totalHours, logId]
       );
       
+      if (req.user) { logActivity(req.user.id, req.user.name, 'Mark Attendance', 'Action: Check Out'); }
       res.json({ success: true, updatedId: logId });
+      if (req.app.get('io')) { req.app.get('io').emit('attendance_updated'); }
     } else {
       res.status(400).json({ error: 'Invalid action type' });
     }
@@ -471,6 +532,79 @@ app.post('/api/sync/trigger', async (req, res) => {
   } catch (err) {
     console.error("Sync Error:", err);
     res.status(500).json({ error: 'Database sync failed' });
+  }
+});
+
+function getIndianGazetteHolidays(year) {
+  const dataset = {
+    2026: [
+      { date: '2026-01-26', name: 'Republic Day', localName: 'Republic Day 🇮🇳' },
+      { date: '2026-03-04', name: 'Holi', localName: 'Holi 🎨' },
+      { date: '2026-05-01', name: 'Labour Day', localName: 'Labour Day 🛠️' },
+      { date: '2026-08-15', name: 'Independence Day', localName: 'Independence Day 🇮🇳' },
+      { date: '2026-08-28', name: 'Raksha Bandhan', localName: 'Raksha Bandhan 🪔' },
+      { date: '2026-09-04', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami 🪈' },
+      { date: '2026-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti 👓' },
+      { date: '2026-10-20', name: 'Dussehra', localName: 'Vijayadashami / Dussehra 🏹' },
+      { date: '2026-11-08', name: 'Diwali', localName: 'Deepavali / Diwali 🪔' },
+      { date: '2026-12-25', name: 'Christmas', localName: 'Christmas 🎄' }
+    ],
+    2027: [
+      { date: '2027-01-26', name: 'Republic Day', localName: 'Republic Day 🇮🇳' },
+      { date: '2027-03-22', name: 'Holi', localName: 'Holi 🎨' },
+      { date: '2027-05-01', name: 'Labour Day', localName: 'Labour Day 🛠️' },
+      { date: '2027-08-15', name: 'Independence Day', localName: 'Independence Day 🇮🇳' },
+      { date: '2027-08-17', name: 'Raksha Bandhan', localName: 'Raksha Bandhan 🪔' },
+      { date: '2027-08-25', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami 🪈' },
+      { date: '2027-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti 👓' },
+      { date: '2027-10-09', name: 'Dussehra', localName: 'Vijayadashami / Dussehra 🏹' },
+      { date: '2027-10-29', name: 'Diwali', localName: 'Deepavali / Diwali 🪔' },
+      { date: '2027-12-25', name: 'Christmas', localName: 'Christmas 🎄' }
+    ],
+    2028: [
+      { date: '2028-01-26', name: 'Republic Day', localName: 'Republic Day 🇮🇳' },
+      { date: '2028-03-11', name: 'Holi', localName: 'Holi 🎨' },
+      { date: '2028-05-01', name: 'Labour Day', localName: 'Labour Day 🛠️' },
+      { date: '2028-08-15', name: 'Independence Day', localName: 'Independence Day 🇮🇳' },
+      { date: '2028-08-05', name: 'Raksha Bandhan', localName: 'Raksha Bandhan 🪔' },
+      { date: '2028-08-13', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami 🪈' },
+      { date: '2028-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti 👓' },
+      { date: '2028-09-28', name: 'Dussehra', localName: 'Vijayadashami / Dussehra 🏹' },
+      { date: '2028-10-17', name: 'Diwali', localName: 'Deepavali / Diwali 🪔' },
+      { date: '2028-12-25', name: 'Christmas', localName: 'Christmas 🎄' }
+    ]
+  };
+
+  return dataset[year] || [
+    { date: `${year}-01-26`, name: 'Republic Day', localName: 'Republic Day 🇮🇳' },
+    { date: `${year}-05-01`, name: 'Labour Day', localName: 'Labour Day 🛠️' },
+    { date: `${year}-08-15`, name: 'Independence Day', localName: 'Independence Day 🇮🇳' },
+    { date: `${year}-10-02`, name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti 👓' },
+    { date: `${year}-12-25`, name: 'Christmas', localName: 'Christmas 🎄' }
+  ];
+}
+
+// GET Indian Public Holidays Endpoint
+app.get('/api/holidays/IN/:year?', async (req, res) => {
+  try {
+    const year = parseInt(req.params.year || new Date().getFullYear());
+    const holidays = getIndianGazetteHolidays(year);
+
+    res.json({
+      success: true,
+      country: 'IN',
+      year,
+      count: holidays.length,
+      holidays
+    });
+  } catch (err) {
+    console.error('Fetch holidays API error:', err.message);
+    const year = parseInt(req.params.year || new Date().getFullYear());
+    res.json({
+      success: true,
+      year,
+      holidays: getIndianGazetteHolidays(year)
+    });
   }
 });
 

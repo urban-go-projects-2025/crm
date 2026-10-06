@@ -28,20 +28,22 @@
 html, body {
   background-color: var(--body-bg);
   color: var(--text-dark);
-  min-height: 100vh;
-  width: 100%;
-  max-width: 100vw;
-  overflow-x: hidden;
+  height: 100vh;
+  height: 100dvh;
+  width: 100vw;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
   -webkit-font-smoothing: antialiased;
 }
 
 /* Layout */
 .app-container {
   display: flex;
-  min-height: 100vh;
-  width: 100%;
-  max-width: 100vw;
-  overflow-x: hidden;
+  height: 100vh;
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
 }
 
 /* Sidebar */
@@ -53,9 +55,7 @@ html, body {
   flex-direction: column;
   padding: 24px 16px;
   flex-shrink: 0;
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  height: 100%;
   overflow-y: auto;
   box-shadow: 4px 0 20px rgba(56, 74, 102, 0.2);
   z-index: 50;
@@ -138,9 +138,18 @@ html, body {
   min-width: 0;
   width: 100%;
   max-width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
   overflow-x: hidden;
+}
+
+main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Header */
@@ -494,6 +503,10 @@ html, body {
   border-bottom: 1px solid #F1F5F9;
   letter-spacing: 0.5px;
   white-space: nowrap;
+  background: #FFFFFF;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
 .custom-table td {

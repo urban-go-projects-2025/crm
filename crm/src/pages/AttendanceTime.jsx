@@ -1,8 +1,93 @@
 import React, { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { Search, Plus, Inbox, Sun, ChevronLeft, ChevronRight, X, CheckCircle2, Check, XCircle } from 'lucide-react';
-import { fetchLeaveRequests, createLeaveRequest, updateLeaveStatus, fetchCrmUsers, fetchAttendanceLogs, markAttendance } from '../services/api';
+import { fetchLeaveRequests, createLeaveRequest, updateLeaveStatus, fetchCrmUsers, fetchAttendanceLogs, markAttendance, fetchWorkers, fetchIndianHolidays } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+
+function calculateTotalHours(checkInStr, checkOutStr) {
+  if (!checkInStr || !checkOutStr || checkInStr === '--' || checkOutStr === '--') {
+    return '--';
+  }
+
+  const parseTimeToMinutes = (timeStr) => {
+    if (!timeStr || typeof timeStr !== 'string') return null;
+    const cleanStr = timeStr.trim().toUpperCase();
+    const isPM = cleanStr.includes('PM');
+    const isAM = cleanStr.includes('AM');
+    
+    const timeOnly = cleanStr.replace(/(AM|PM)/g, '').trim();
+    const parts = timeOnly.split(':');
+    if (parts.length < 2) return null;
+    
+    let hours = parseInt(parts[0], 10);
+    let minutes = parseInt(parts[1], 10);
+    
+    if (isNaN(hours) || isNaN(minutes)) return null;
+
+    if (isPM && hours < 12) hours += 12;
+    if (isAM && hours === 12) hours = 0;
+
+    return hours * 60 + minutes;
+  };
+
+  const startMins = parseTimeToMinutes(checkInStr);
+  const endMins = parseTimeToMinutes(checkOutStr);
+
+  if (startMins === null || endMins === null) {
+    return '--';
+  }
+
+  let diffMins = endMins - startMins;
+  if (diffMins < 0) {
+    diffMins += 24 * 60;
+  }
+
+  if (diffMins === 0) return '0.0 hrs';
+  
+  const hrs = (diffMins / 60).toFixed(1);
+  if (hrs === '0.0' && diffMins > 0) {
+    return `${diffMins} mins`;
+  }
+  return `${hrs} hrs`;
+}
+
+const DEFAULT_INDIAN_HOLIDAYS = [
+  // 2026 (10 Selected Holidays)
+  { date: '2026-01-26', name: 'Republic Day', localName: 'Republic Day 🇮🇳' },
+  { date: '2026-03-04', name: 'Holi', localName: 'Holi 🎨' },
+  { date: '2026-05-01', name: 'Labour Day', localName: 'Labour Day 🛠️' },
+  { date: '2026-08-15', name: 'Independence Day', localName: 'Independence Day 🇮🇳' },
+  { date: '2026-08-28', name: 'Raksha Bandhan', localName: 'Raksha Bandhan 🪔' },
+  { date: '2026-09-04', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami 🪈' },
+  { date: '2026-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti 👓' },
+  { date: '2026-10-20', name: 'Dussehra', localName: 'Vijayadashami / Dussehra 🏹' },
+  { date: '2026-11-08', name: 'Diwali', localName: 'Deepavali / Diwali 🪔' },
+  { date: '2026-12-25', name: 'Christmas', localName: 'Christmas 🎄' },
+
+  // 2027 (10 Selected Holidays)
+  { date: '2027-01-26', name: 'Republic Day', localName: 'Republic Day 🇮🇳' },
+  { date: '2027-03-22', name: 'Holi', localName: 'Holi 🎨' },
+  { date: '2027-05-01', name: 'Labour Day', localName: 'Labour Day 🛠️' },
+  { date: '2027-08-15', name: 'Independence Day', localName: 'Independence Day 🇮🇳' },
+  { date: '2027-08-17', name: 'Raksha Bandhan', localName: 'Raksha Bandhan 🪔' },
+  { date: '2027-08-25', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami 🪈' },
+  { date: '2027-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti 👓' },
+  { date: '2027-10-09', name: 'Dussehra', localName: 'Vijayadashami / Dussehra 🏹' },
+  { date: '2027-10-29', name: 'Diwali', localName: 'Deepavali / Diwali 🪔' },
+  { date: '2027-12-25', name: 'Christmas', localName: 'Christmas 🎄' },
+
+  // 2028 (10 Selected Holidays)
+  { date: '2028-01-26', name: 'Republic Day', localName: 'Republic Day 🇮🇳' },
+  { date: '2028-03-11', name: 'Holi', localName: 'Holi 🎨' },
+  { date: '2028-05-01', name: 'Labour Day', localName: 'Labour Day 🛠️' },
+  { date: '2028-08-15', name: 'Independence Day', localName: 'Independence Day 🇮🇳' },
+  { date: '2028-08-05', name: 'Raksha Bandhan', localName: 'Raksha Bandhan 🪔' },
+  { date: '2028-08-13', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami 🪈' },
+  { date: '2028-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti 👓' },
+  { date: '2028-09-28', name: 'Dussehra', localName: 'Vijayadashami / Dussehra 🏹' },
+  { date: '2028-10-17', name: 'Diwali', localName: 'Deepavali / Diwali 🪔' },
+  { date: '2028-12-25', name: 'Christmas', localName: 'Christmas 🎄' }
+];
 
 export default function AttendanceTime() {
   const socket = useSocket();
@@ -45,19 +130,34 @@ export default function AttendanceTime() {
 
   const [workersList, setWorkersList] = useState([]);
   const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [holidays, setHolidays] = useState(DEFAULT_INDIAN_HOLIDAYS);
 
-  // Load Leave Requests from Database
+  // Load Leave Requests & Indian Holidays from Database/API
   const loadData = async () => {
     try {
       setIsLoadingLeaves(true);
-      const [leaveData, logsData, usersData] = await Promise.all([
+      const targetDate = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+      const targetYear = targetDate.getFullYear();
+
+      const [leaveData, logsData, usersData, workersData, holidayData] = await Promise.all([
         fetchLeaveRequests(),
         fetchAttendanceLogs(),
-        fetchCrmUsers()
+        fetchCrmUsers(),
+        fetchWorkers().catch(() => ({ workers: [] })),
+        fetchIndianHolidays(targetYear).catch(() => ({ holidays: [] }))
       ]);
       setLeaveRequests(leaveData.requests || []);
       setAttendanceRecords(logsData.logs || []);
-      setWorkersList(usersData.users || []);
+      const crmUsers = usersData.users || [];
+      const providers = (workersData && workersData.workers) || [];
+      setWorkersList([...crmUsers, ...providers]);
+
+      const fetchedHolidays = holidayData.holidays || [];
+      const mergedMap = {};
+      [...DEFAULT_INDIAN_HOLIDAYS, ...fetchedHolidays].forEach(h => {
+        if (h.date) mergedMap[h.date] = h;
+      });
+      setHolidays(Object.values(mergedMap));
     } catch (err) {
       console.error(err);
       showToast('Failed to load attendance data');
@@ -68,7 +168,17 @@ export default function AttendanceTime() {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [monthOffset]);
+
+  const getHolidayForDay = (dayNumber) => {
+    if (!dayNumber || !holidays.length) return null;
+    const baseDate = new Date(today.getFullYear(), today.getMonth() + monthOffset, dayNumber);
+    const yyyy = baseDate.getFullYear();
+    const mm = String(baseDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(dayNumber).padStart(2, '0');
+    const dateStr = `${yyyy}-${mm}-${dd}`;
+    return holidays.find(h => h.date === dateStr);
+  };
 
   const pendingLeavesCount = leaveRequests.filter(r => r.status === 'Pending').length;
   const approvedLeavesCount = leaveRequests.filter(r => r.status === 'Approved').length;
@@ -185,19 +295,36 @@ export default function AttendanceTime() {
     e.preventDefault();
     if (!editingRecord) return;
 
-    setAttendanceRecords(prev => prev.map(r => r.id === editingRecord.id ? editingRecord : r));
+    const checkIn = editingRecord.check_in || editingRecord.checkIn || '--';
+    const checkOut = editingRecord.check_out || editingRecord.checkOut || '--';
+    const computedHours = calculateTotalHours(checkIn, checkOut);
+
+    const updated = {
+      ...editingRecord,
+      check_in: checkIn,
+      check_out: checkOut,
+      total_hours: computedHours !== '--' ? computedHours : (editingRecord.total_hours || editingRecord.totalHours || '--')
+    };
+
+    setAttendanceRecords(prev => prev.map(r => r.id === editingRecord.id ? updated : r));
     setEditingRecord(null);
-    showToast(`Attendance record updated for ${editingRecord.name}`);
+    showToast(`Attendance record updated for ${editingRecord.worker_name || editingRecord.name || 'Worker'}`);
   };
 
   const filtered = attendanceRecords.filter(r => {
     const workerName = r.worker_name || r.name || '';
-    const recordId = r.worker_id ? `WRK-${r.worker_id}` : (r.id ? `LOG-${r.id}` : '');
+    const workerDetails = workersList.find(w => 
+      (w.name && workerName && w.name.toLowerCase() === workerName.toLowerCase()) ||
+      (w.id && r.worker_id && String(w.id) === String(r.worker_id))
+    );
+    const roleDisplay = workerDetails ? 
+      (workerDetails.role || workerDetails.designation || (workerDetails.isAdmin ? 'Super Administrator' : 'Worker')) : 
+      (r.role || r.designation || 'Staff');
     
     // Role-based visibility check
     const matchesUser = currentUser?.isAdmin || workerName === currentUser?.name;
 
-    const matchesSearch = recordId.toLowerCase().includes(search.toLowerCase()) ||
+    const matchesSearch = roleDisplay.toLowerCase().includes(search.toLowerCase()) ||
       workerName.toLowerCase().includes(search.toLowerCase());
     
     const matchesStatus = statusFilter === 'All Statuses' || r.status === statusFilter;
@@ -285,7 +412,23 @@ export default function AttendanceTime() {
       {/* Calendar Card Section */}
       <div className="card-section" style={{ marginTop: 24 }}>
         <div className="card-header">
-          <h3 style={{ fontSize: 20, fontWeight: 800 }}>{currentMonthData.monthName}</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <h3 style={{ fontSize: 20, fontWeight: 800 }}>{currentMonthData.monthName}</h3>
+            <span style={{ 
+              background: '#FEF2F2', 
+              color: '#991B1B', 
+              border: '1px solid #FCA5A5', 
+              padding: '4px 10px', 
+              borderRadius: 20, 
+              fontSize: 11, 
+              fontWeight: 700,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6 
+            }}>
+              🇮🇳 Indian Public Holidays Synced
+            </span>
+          </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <button 
               className="btn-secondary" 
@@ -325,13 +468,15 @@ export default function AttendanceTime() {
             }
 
             const isSelected = monthOffset === 0 && selectedDay === c.day;
+            const holiday = getHolidayForDay(c.day);
+
             return (
               <div 
                 key={idx} 
                 onClick={() => !c.upcoming && setSelectedDay(c.day)}
                 style={{
-                  background: '#FFFFFF',
-                  border: isSelected ? '2px solid #1E293B' : '1px solid #F1F5F9',
+                  background: holiday ? '#FFFDF5' : '#FFFFFF',
+                  border: isSelected ? '2px solid #1E293B' : holiday ? '1.5px solid #FDE68A' : '1px solid #F1F5F9',
                   borderRadius: 12,
                   padding: 12,
                   minHeight: 85,
@@ -343,10 +488,35 @@ export default function AttendanceTime() {
                   transition: 'all 0.15s ease'
                 }}
               >
-                <span style={{ fontWeight: 800, fontSize: 15, color: isSelected ? '#1E293B' : '#0F172A' }}>{c.day}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 800, fontSize: 15, color: isSelected ? '#1E293B' : '#0F172A' }}>{c.day}</span>
+                  {holiday && (
+                    <span style={{ fontSize: 12 }} title={`Indian Holiday: ${holiday.localName || holiday.name}`}>🇮🇳</span>
+                  )}
+                </div>
+
+                {holiday && (
+                  <div style={{
+                    background: '#FEF2F2',
+                    border: '1px solid #FCA5A5',
+                    color: '#991B1B',
+                    padding: '3px 6px',
+                    borderRadius: 6,
+                    fontSize: 10,
+                    fontWeight: 700,
+                    marginTop: 4,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4
+                  }} title={`Indian Public Holiday: ${holiday.localName || holiday.name}`}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {holiday.localName || holiday.name}
+                    </span>
+                  </div>
+                )}
 
                 {c.upcoming ? (
-                  <span style={{ fontSize: 11, color: '#94A3B8', fontStyle: 'italic' }}>Upcoming</span>
+                  !holiday && <span style={{ fontSize: 11, color: '#94A3B8', fontStyle: 'italic', marginTop: 4 }}>Upcoming</span>
                 ) : (
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
                     {c.present > 0 && (
@@ -520,7 +690,7 @@ export default function AttendanceTime() {
           <table className="custom-table">
             <thead>
               <tr>
-                <th>Worker ID</th>
+                <th>Role / Designation</th>
                 <th>Worker Name</th>
                 <th>Category</th>
                 <th>Date</th>
@@ -533,13 +703,21 @@ export default function AttendanceTime() {
             </thead>
             <tbody>
                 {filtered.map((r, i) => {
-                  const workerDetails = workersList.find(w => w.name === r.worker_name);
-                  const phone = workerDetails ? workerDetails.phone : "+91 99999 00000";
-                  const category = workerDetails ? workerDetails.service_category : "Staff";
+                  const workerDetails = workersList.find(w => 
+                    (w.name && r.worker_name && w.name.toLowerCase() === r.worker_name.toLowerCase()) ||
+                    (w.id && r.worker_id && String(w.id) === String(r.worker_id))
+                  );
+                  const phone = workerDetails ? (workerDetails.phone || workerDetails.phone_number || "+91 99999 00000") : "+91 99999 00000";
+                  const category = workerDetails ? (workerDetails.service_category || workerDetails.category || "Staff") : "Staff";
                   const avatar = r.worker_name ? r.worker_name.split(' ').map(n => n[0]).join('') : "U";
+                  
+                  const roleDisplay = workerDetails ? 
+                    (workerDetails.role || workerDetails.designation || (workerDetails.isAdmin ? 'Super Administrator' : 'Worker')) : 
+                    (r.role || r.designation || 'Staff');
+
                   return (
                     <tr key={r.id || i}>
-                      <td style={{ fontWeight: 700, color: '#0F172A', fontSize: 13 }}>{r.worker_id ? `WRK-${r.worker_id}` : `LOG-${r.id}`}</td>
+                      <td style={{ fontWeight: 700, color: '#0F172A', fontSize: 13 }}>{roleDisplay}</td>
 
                       <td>
                         <div className="profile-cell">
@@ -573,7 +751,9 @@ export default function AttendanceTime() {
                       <td style={{ fontWeight: 600, color: '#0F172A', fontSize: 13 }}>{r.check_in}</td>
                       <td style={{ fontWeight: 600, color: '#0F172A', fontSize: 13 }}>{r.check_out}</td>
 
-                      <td style={{ fontWeight: 800, color: '#0F172A' }}>{r.total_hours}</td>
+                      <td style={{ fontWeight: 800, color: '#0F172A' }}>
+                        {(!r.total_hours || r.total_hours === 'Calculated') ? calculateTotalHours(r.check_in, r.check_out) : r.total_hours}
+                      </td>
 
                       <td>
                         {currentUser?.isAdmin && (
@@ -740,16 +920,16 @@ export default function AttendanceTime() {
                     <label>Check In</label>
                     <input 
                       className="form-control"
-                      value={editingRecord.checkIn}
-                      onChange={e => setEditingRecord({ ...editingRecord, checkIn: e.target.value })}
+                      value={editingRecord.check_in || editingRecord.checkIn || ''}
+                      onChange={e => setEditingRecord({ ...editingRecord, check_in: e.target.value, checkIn: e.target.value })}
                     />
                   </div>
                   <div className="form-group">
                     <label>Check Out</label>
                     <input 
                       className="form-control"
-                      value={editingRecord.checkOut}
-                      onChange={e => setEditingRecord({ ...editingRecord, checkOut: e.target.value })}
+                      value={editingRecord.check_out || editingRecord.checkOut || ''}
+                      onChange={e => setEditingRecord({ ...editingRecord, check_out: e.target.value, checkOut: e.target.value })}
                     />
                   </div>
                 </div>
@@ -758,8 +938,8 @@ export default function AttendanceTime() {
                   <label>Total Hours</label>
                   <input 
                     className="form-control"
-                    value={editingRecord.totalHours}
-                    onChange={e => setEditingRecord({ ...editingRecord, totalHours: e.target.value })}
+                    value={editingRecord.total_hours || editingRecord.totalHours || ''}
+                    onChange={e => setEditingRecord({ ...editingRecord, total_hours: e.target.value, totalHours: e.target.value })}
                   />
                 </div>
               </div>
