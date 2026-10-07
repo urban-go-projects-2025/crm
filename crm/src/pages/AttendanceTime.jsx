@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
-import { Search, Plus, Inbox, Sun, ChevronLeft, ChevronRight, X, CheckCircle2, Check, XCircle } from 'lucide-react';
-import { fetchLeaveRequests, createLeaveRequest, updateLeaveStatus, fetchCrmUsers, fetchAttendanceLogs, markAttendance, fetchWorkers, fetchIndianHolidays } from '../services/api';
+import { Search, Plus, Inbox, Sun, ChevronLeft, ChevronRight, X, CheckCircle2, Check, XCircle, FileText, ClipboardList } from 'lucide-react';
+import { fetchLeaveRequests, createLeaveRequest, updateLeaveStatus, fetchCrmUsers, fetchAttendanceLogs, markAttendance, fetchWorkers, fetchIndianHolidays, updateWorkDescription } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 function calculateTotalHours(checkInStr, checkOutStr) {
@@ -53,40 +53,40 @@ function calculateTotalHours(checkInStr, checkOutStr) {
 
 const DEFAULT_INDIAN_HOLIDAYS = [
   // 2026 (10 Selected Holidays)
-  { date: '2026-01-26', name: 'Republic Day', localName: 'Republic Day 🇮🇳' },
-  { date: '2026-03-04', name: 'Holi', localName: 'Holi 🎨' },
-  { date: '2026-05-01', name: 'Labour Day', localName: 'Labour Day 🛠️' },
-  { date: '2026-08-15', name: 'Independence Day', localName: 'Independence Day 🇮🇳' },
-  { date: '2026-08-28', name: 'Raksha Bandhan', localName: 'Raksha Bandhan 🪔' },
-  { date: '2026-09-04', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami 🪈' },
-  { date: '2026-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti 👓' },
-  { date: '2026-10-20', name: 'Dussehra', localName: 'Vijayadashami / Dussehra 🏹' },
-  { date: '2026-11-08', name: 'Diwali', localName: 'Deepavali / Diwali 🪔' },
-  { date: '2026-12-25', name: 'Christmas', localName: 'Christmas 🎄' },
+  { date: '2026-01-26', name: 'Republic Day', localName: 'Republic Day' },
+  { date: '2026-03-04', name: 'Holi', localName: 'Holi' },
+  { date: '2026-05-01', name: 'Labour Day', localName: 'Labour Day' },
+  { date: '2026-08-15', name: 'Independence Day', localName: 'Independence Day' },
+  { date: '2026-08-28', name: 'Raksha Bandhan', localName: 'Raksha Bandhan' },
+  { date: '2026-09-04', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami' },
+  { date: '2026-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti' },
+  { date: '2026-10-20', name: 'Dussehra', localName: 'Vijayadashami / Dussehra' },
+  { date: '2026-11-08', name: 'Diwali', localName: 'Deepavali / Diwali' },
+  { date: '2026-12-25', name: 'Christmas', localName: 'Christmas' },
 
   // 2027 (10 Selected Holidays)
-  { date: '2027-01-26', name: 'Republic Day', localName: 'Republic Day 🇮🇳' },
-  { date: '2027-03-22', name: 'Holi', localName: 'Holi 🎨' },
-  { date: '2027-05-01', name: 'Labour Day', localName: 'Labour Day 🛠️' },
-  { date: '2027-08-15', name: 'Independence Day', localName: 'Independence Day 🇮🇳' },
-  { date: '2027-08-17', name: 'Raksha Bandhan', localName: 'Raksha Bandhan 🪔' },
-  { date: '2027-08-25', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami 🪈' },
-  { date: '2027-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti 👓' },
-  { date: '2027-10-09', name: 'Dussehra', localName: 'Vijayadashami / Dussehra 🏹' },
-  { date: '2027-10-29', name: 'Diwali', localName: 'Deepavali / Diwali 🪔' },
-  { date: '2027-12-25', name: 'Christmas', localName: 'Christmas 🎄' },
+  { date: '2027-01-26', name: 'Republic Day', localName: 'Republic Day' },
+  { date: '2027-03-22', name: 'Holi', localName: 'Holi' },
+  { date: '2027-05-01', name: 'Labour Day', localName: 'Labour Day' },
+  { date: '2027-08-15', name: 'Independence Day', localName: 'Independence Day' },
+  { date: '2027-08-17', name: 'Raksha Bandhan', localName: 'Raksha Bandhan' },
+  { date: '2027-08-25', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami' },
+  { date: '2027-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti' },
+  { date: '2027-10-09', name: 'Dussehra', localName: 'Vijayadashami / Dussehra' },
+  { date: '2027-10-29', name: 'Diwali', localName: 'Deepavali / Diwali' },
+  { date: '2027-12-25', name: 'Christmas', localName: 'Christmas' },
 
   // 2028 (10 Selected Holidays)
-  { date: '2028-01-26', name: 'Republic Day', localName: 'Republic Day 🇮🇳' },
-  { date: '2028-03-11', name: 'Holi', localName: 'Holi 🎨' },
-  { date: '2028-05-01', name: 'Labour Day', localName: 'Labour Day 🛠️' },
-  { date: '2028-08-15', name: 'Independence Day', localName: 'Independence Day 🇮🇳' },
-  { date: '2028-08-05', name: 'Raksha Bandhan', localName: 'Raksha Bandhan 🪔' },
-  { date: '2028-08-13', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami 🪈' },
-  { date: '2028-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti 👓' },
-  { date: '2028-09-28', name: 'Dussehra', localName: 'Vijayadashami / Dussehra 🏹' },
-  { date: '2028-10-17', name: 'Diwali', localName: 'Deepavali / Diwali 🪔' },
-  { date: '2028-12-25', name: 'Christmas', localName: 'Christmas 🎄' }
+  { date: '2028-01-26', name: 'Republic Day', localName: 'Republic Day' },
+  { date: '2028-03-11', name: 'Holi', localName: 'Holi' },
+  { date: '2028-05-01', name: 'Labour Day', localName: 'Labour Day' },
+  { date: '2028-08-15', name: 'Independence Day', localName: 'Independence Day' },
+  { date: '2028-08-05', name: 'Raksha Bandhan', localName: 'Raksha Bandhan' },
+  { date: '2028-08-13', name: 'Krishna Janmashtami', localName: 'Krishna Janmashtami' },
+  { date: '2028-10-02', name: 'Gandhi Jayanti', localName: 'Gandhi Jayanti' },
+  { date: '2028-09-28', name: 'Dussehra', localName: 'Vijayadashami / Dussehra' },
+  { date: '2028-10-17', name: 'Diwali', localName: 'Deepavali / Diwali' },
+  { date: '2028-12-25', name: 'Christmas', localName: 'Christmas' }
 ];
 
 export default function AttendanceTime() {
@@ -116,6 +116,11 @@ export default function AttendanceTime() {
   const [showOnLeaveModal, setShowOnLeaveModal] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
+
+  // Daily Work Log modal state
+  const [workLogModalRecord, setWorkLogModalRecord] = useState(null);
+  const [workLogInput, setWorkLogInput] = useState('');
+  const [isSavingWorkLog, setIsSavingWorkLog] = useState(false);
 
   // Form states
   const [markForm, setMarkForm] = useState({
@@ -149,8 +154,7 @@ export default function AttendanceTime() {
       setLeaveRequests(leaveData.requests || []);
       setAttendanceRecords(logsData.logs || []);
       const crmUsers = usersData.users || [];
-      const providers = (workersData && workersData.workers) || [];
-      setWorkersList([...crmUsers, ...providers]);
+      setWorkersList(crmUsers);
 
       const fetchedHolidays = holidayData.holidays || [];
       const mergedMap = {};
@@ -309,6 +313,85 @@ export default function AttendanceTime() {
     setAttendanceRecords(prev => prev.map(r => r.id === editingRecord.id ? updated : r));
     setEditingRecord(null);
     showToast(`Attendance record updated for ${editingRecord.worker_name || editingRecord.name || 'Worker'}`);
+  };
+
+  const openWorkLogModal = (record) => {
+    setWorkLogModalRecord(record);
+    const existing = record.work_description || record.workDescription || '';
+    if (!existing) {
+      setWorkLogInput('• ');
+    } else {
+      const formatted = existing.split('\n').map(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return '';
+        if (trimmed.startsWith('•') || trimmed.startsWith('-') || /^\d+\./.test(trimmed)) {
+          return line;
+        }
+        return `• ${line}`;
+      }).join('\n');
+      setWorkLogInput(formatted);
+    }
+  };
+
+  const handleWorkLogKeyDown = (e) => {
+    if (currentUser?.isAdmin) return;
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const cursor = e.target.selectionStart;
+      const value = workLogInput;
+
+      const linesBefore = value.substring(0, cursor).split('\n');
+      const currentLine = linesBefore[linesBefore.length - 1];
+
+      if (currentLine.trim() === '•') {
+        const lineStartPos = cursor - currentLine.length;
+        const newValue = value.substring(0, lineStartPos) + value.substring(cursor);
+        setWorkLogInput(newValue);
+        setTimeout(() => {
+          if (e.target) e.target.selectionStart = e.target.selectionEnd = lineStartPos;
+        }, 0);
+        return;
+      }
+
+      const before = value.substring(0, cursor);
+      const after = value.substring(cursor);
+      const newValue = before + '\n• ' + after;
+      setWorkLogInput(newValue);
+
+      setTimeout(() => {
+        if (e.target) e.target.selectionStart = e.target.selectionEnd = cursor + 3;
+      }, 0);
+    }
+  };
+
+  const handleSaveWorkLog = async (e) => {
+    e.preventDefault();
+    if (!workLogModalRecord) return;
+    try {
+      setIsSavingWorkLog(true);
+      const formattedInput = workLogInput
+        .split('\n')
+        .map(line => {
+          const trimmed = line.trim();
+          if (!trimmed) return '';
+          if (trimmed.startsWith('•') || trimmed.startsWith('-') || /^\d+\./.test(trimmed)) {
+            return line;
+          }
+          return `• ${line}`;
+        })
+        .filter(Boolean)
+        .join('\n');
+
+      await updateWorkDescription(workLogModalRecord.id, formattedInput || workLogInput);
+      setWorkLogModalRecord(null);
+      showToast('Daily work log saved successfully!');
+      loadData();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to save work log. Please try again.');
+    } finally {
+      setIsSavingWorkLog(false);
+    }
   };
 
   const filtered = attendanceRecords.filter(r => {
@@ -510,7 +593,7 @@ export default function AttendanceTime() {
                     gap: 4
                   }} title={`Indian Public Holiday: ${holiday.localName || holiday.name}`}>
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {holiday.localName || holiday.name}
+                      {(holiday.localName || holiday.name).replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}]/gu, '').trim()}
                     </span>
                   </div>
                 )}
@@ -717,9 +800,9 @@ export default function AttendanceTime() {
 
                   return (
                     <tr key={r.id || i}>
-                      <td style={{ fontWeight: 700, color: '#0F172A', fontSize: 13 }}>{roleDisplay}</td>
+                      <td style={{ fontWeight: 700, color: '#0F172A', fontSize: 13, whiteSpace: 'nowrap' }}>{roleDisplay}</td>
 
-                      <td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
                         <div className="profile-cell">
                           <div className="profile-avatar-circle" style={{ background: '#1E293B', color: '#FFFFFF' }}>
                             {avatar}
@@ -731,15 +814,15 @@ export default function AttendanceTime() {
                         </div>
                       </td>
 
-                      <td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
                         <span className="badge-outline" style={{ background: '#F1F5F9', color: '#1E293B', borderColor: '#CBD5E1' }}>
                           {category}
                         </span>
                       </td>
 
-                      <td style={{ fontSize: 13, color: '#334155' }}>{r.date}</td>
+                      <td style={{ fontSize: 13, color: '#334155', whiteSpace: 'nowrap' }}>{r.date}</td>
 
-                      <td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
                         <span className={`status-pill ${
                           r.status === 'Present' ? 'completed' :
                           r.status === 'Absent' ? 'cancelled' : 'pending'
@@ -748,23 +831,92 @@ export default function AttendanceTime() {
                         </span>
                       </td>
 
-                      <td style={{ fontWeight: 600, color: '#0F172A', fontSize: 13 }}>{r.check_in}</td>
-                      <td style={{ fontWeight: 600, color: '#0F172A', fontSize: 13 }}>{r.check_out}</td>
+                      <td style={{ fontWeight: 600, color: '#0F172A', fontSize: 13, whiteSpace: 'nowrap' }}>{r.check_in}</td>
+                      <td style={{ fontWeight: 600, color: '#0F172A', fontSize: 13, whiteSpace: 'nowrap' }}>{r.check_out}</td>
 
-                      <td style={{ fontWeight: 800, color: '#0F172A' }}>
+                      <td style={{ fontWeight: 800, color: '#0F172A', whiteSpace: 'nowrap' }}>
                         {(!r.total_hours || r.total_hours === 'Calculated') ? calculateTotalHours(r.check_in, r.check_out) : r.total_hours}
                       </td>
 
-                      <td>
-                        {currentUser?.isAdmin && (
-                          <button 
-                            className="btn-secondary"
-                            onClick={() => setEditingRecord({ ...r })}
-                            style={{ cursor: 'pointer' }}
-                          >
-                            Edit
-                          </button>
-                        )}
+                      <td style={{ whiteSpace: 'nowrap', minWidth: 200 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          {currentUser?.isAdmin ? (
+                            <button 
+                              className="btn-secondary"
+                              onClick={() => openWorkLogModal(r)}
+                              style={{ 
+                                background: r.work_description ? '#ECFDF5' : '#F1F5F9', 
+                                color: r.work_description ? '#047857' : '#475569', 
+                                borderColor: r.work_description ? '#A7F3D0' : '#CBD5E1', 
+                                fontWeight: 700, 
+                                padding: '6px 12px', 
+                                fontSize: 12, 
+                                borderRadius: 8, 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: 6,
+                                cursor: 'pointer' 
+                              }}
+                              title="View Staff Daily Work Log"
+                            >
+                              <FileText size={14} color={r.work_description ? '#10B981' : '#64748B'} />
+                              <span>View Work Log</span>
+                            </button>
+                          ) : (
+                            r.work_description ? (
+                              <button 
+                                className="btn-secondary"
+                                onClick={() => openWorkLogModal(r)}
+                                style={{ 
+                                  background: '#ECFDF5', 
+                                  color: '#047857', 
+                                  borderColor: '#A7F3D0', 
+                                  fontWeight: 700, 
+                                  padding: '6px 12px', 
+                                  fontSize: 12, 
+                                  borderRadius: 8, 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  gap: 6,
+                                  cursor: 'pointer' 
+                                }}
+                                title="View / Edit Daily Work Log"
+                              >
+                                <FileText size={14} color="#10B981" />
+                                <span>View Work Log</span>
+                              </button>
+                            ) : (
+                              <button 
+                                className="btn-primary"
+                                onClick={() => openWorkLogModal(r)}
+                                style={{ 
+                                  background: 'rgb(56, 74, 102)', 
+                                  padding: '6px 12px', 
+                                  fontSize: 12, 
+                                  borderRadius: 8, 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  gap: 6,
+                                  cursor: 'pointer' 
+                                }}
+                                title="Add Daily Work Log"
+                              >
+                                <Plus size={14} />
+                                <span>Work Log</span>
+                              </button>
+                            )
+                          )}
+
+                          {!!currentUser?.isAdmin && (
+                            <button 
+                              className="btn-secondary"
+                              onClick={() => setEditingRecord({ ...r })}
+                              style={{ padding: '6px 12px', fontSize: 12, borderRadius: 8, cursor: 'pointer' }}
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -789,15 +941,15 @@ export default function AttendanceTime() {
             <form onSubmit={handleMarkAttendanceSubmit}>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div className="form-group">
-                  <label>Worker Name</label>
+                  <label>Staff Name</label>
                   <select 
                     className="form-control"
                     value={markForm.workerName}
                     onChange={e => setMarkForm({ ...markForm, workerName: e.target.value })}
                   >
-                    <option value="">Select Worker...</option>
+                    <option value="">Select Staff Member...</option>
                     {workersList.map(w => (
-                      <option key={w.id} value={w.name}>{w.name} ({w.role || 'Worker'})</option>
+                      <option key={w.id} value={w.name}>{w.name} ({w.role || w.category || 'Staff'})</option>
                     ))}
                   </select>
                 </div>
@@ -993,6 +1145,100 @@ export default function AttendanceTime() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 5: Daily Work Description / Activity Log */}
+      {workLogModalRecord && (
+        <div className="modal-backdrop">
+          <div className="modal-card" style={{ maxWidth: 540 }}>
+            <div className="modal-header" style={{ background: 'rgb(56, 74, 102)', borderBottom: '1px solid rgb(42, 57, 79)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <ClipboardList size={22} color="#FFFFFF" />
+                <div>
+                  <h3 style={{ color: '#FFFFFF', fontSize: 17, margin: 0 }}>Daily Work Description / Activity Log</h3>
+                  <span style={{ fontSize: 12, color: '#CBD5E1' }}>
+                    {workLogModalRecord.worker_name} • {workLogModalRecord.date}
+                  </span>
+                </div>
+              </div>
+              <button className="modal-close" onClick={() => setWorkLogModalRecord(null)} style={{ color: '#94A3B8' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveWorkLog}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Meta details badge */}
+                <div style={{
+                  background: '#F8FAFC',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: 10,
+                  padding: '12px 16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: 13
+                }}>
+                  <div>
+                    <span style={{ color: '#64748B' }}>Check In: </span>
+                    <strong style={{ color: '#0F172A' }}>{workLogModalRecord.check_in || '--'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748B' }}>Check Out: </span>
+                    <strong style={{ color: '#0F172A' }}>{workLogModalRecord.check_out || '--'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: '#64748B' }}>Total: </span>
+                    <strong style={{ color: '#0F172A' }}>{workLogModalRecord.total_hours || '--'}</strong>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label style={{ fontSize: 13, fontWeight: 700, color: '#1E293B', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{currentUser?.isAdmin ? 'Staff Completed Work & Tasks (Point-wise):' : "Mention Today's Completed Work & Tasks (Point-wise):"}</span>
+                    <span style={{ fontSize: 11, fontWeight: 600, color: currentUser?.isAdmin ? '#059669' : '#3B82F6' }}>
+                      {currentUser?.isAdmin ? '👁️ Admin View (Read Only)' : '✏️ Staff Edit Mode'}
+                    </span>
+                  </label>
+                  <textarea
+                    className="form-control"
+                    rows={6}
+                    readOnly={!!currentUser?.isAdmin}
+                    placeholder={currentUser?.isAdmin ? 'No work log submitted by staff for this date yet.' : `e.g.\n• Completed AC Repair & Service for Booking #402\n• Conducted site inspection in Sector 62\n• Updated customer status & collected feedback`}
+                    value={workLogInput}
+                    onChange={e => setWorkLogInput(e.target.value)}
+                    onKeyDown={handleWorkLogKeyDown}
+                    style={{ 
+                      lineHeight: 1.6, 
+                      padding: 14, 
+                      fontSize: 13, 
+                      fontFamily: 'inherit',
+                      background: currentUser?.isAdmin ? '#F8FAFC' : '#FFFFFF',
+                      cursor: currentUser?.isAdmin ? 'not-allowed' : 'text',
+                      color: currentUser?.isAdmin ? '#334155' : '#0F172A'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn-secondary" onClick={() => setWorkLogModalRecord(null)}>
+                  Close
+                </button>
+                {!currentUser?.isAdmin && (
+                  <button 
+                    type="submit" 
+                    className="btn-primary" 
+                    disabled={isSavingWorkLog}
+                    style={{ background: 'rgb(56, 74, 102)', boxShadow: '0 4px 14px rgba(56, 74, 102, 0.35)', cursor: 'pointer' }}
+                  >
+                    {isSavingWorkLog ? 'Saving...' : 'Save Work Log 💾'}
+                  </button>
+                )}
+              </div>
+            </form>
           </div>
         </div>
       )}

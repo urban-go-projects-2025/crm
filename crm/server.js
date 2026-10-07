@@ -31,7 +31,7 @@ const logActivity = async (userId, userName, actionType, description) => {
   try {
     await pool.query(
       'INSERT INTO activity_logs (user_id, user_name, action_type, description) VALUES (?, ?, ?, ?)',
-      [userId, userName, actionType, description]
+      [userId || 'SYSTEM', userName || 'Staff / Admin', actionType, description]
     );
   } catch (err) {
     console.error('Activity Logging Error:', err);
@@ -63,9 +63,15 @@ const initializeDB = async () => {
         check_in VARCHAR(50),
         check_out VARCHAR(50),
         total_hours VARCHAR(50),
+        work_description TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    try {
+      await pool.query('ALTER TABLE attendance_logs ADD COLUMN work_description TEXT');
+    } catch (e) {
+      // Column might already exist
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS activity_logs (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -95,6 +101,38 @@ const initializeDB = async () => {
     `);
     console.log('support_tickets table verified');
     
+    try {
+      await pool.query('ALTER TABLE crm_users ADD COLUMN phone VARCHAR(100)');
+    } catch (e) {}
+    try {
+      await pool.query('ALTER TABLE crm_users ADD COLUMN category VARCHAR(255)');
+    } catch (e) {}
+    
+    // Create Performance Indexes for Fast Queries
+    const indexQueries = [
+      "CREATE INDEX idx_crm_users_email ON crm_users (email)",
+      "CREATE INDEX idx_crm_users_status ON crm_users (status)",
+      "CREATE INDEX idx_attendance_logs_date ON attendance_logs (date)",
+      "CREATE INDEX idx_attendance_logs_worker_id ON attendance_logs (worker_id)",
+      "CREATE INDEX idx_attendance_logs_status ON attendance_logs (status)",
+      "CREATE INDEX idx_attendance_logs_worker_date ON attendance_logs (worker_name, date)",
+      "CREATE INDEX idx_leave_requests_status ON leave_requests (status)",
+      "CREATE INDEX idx_leave_requests_worker ON leave_requests (worker_name)",
+      "CREATE INDEX idx_activity_logs_user_id ON activity_logs (user_id)",
+      "CREATE INDEX idx_activity_logs_timestamp ON activity_logs (timestamp)",
+      "CREATE INDEX idx_support_tickets_status ON support_tickets (status)",
+      "CREATE INDEX idx_support_tickets_category ON support_tickets (category)"
+    ];
+
+    for (const query of indexQueries) {
+      try {
+        await pool.query(query);
+      } catch (e) {
+        // Ignore if index already exists
+      }
+    }
+
+    console.log('⚡ All CRM Database Performance Indexes Verified & Active!');
     console.log('leave_requests and attendance_logs tables verified');
   } catch (err) {
     console.error('DB Init Error:', err);
@@ -509,6 +547,31 @@ app.post('/api/attendance/mark', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('Mark attendance error:', err);
     res.status(500).json({ error: 'Failed to mark attendance' });
+  }
+});
+
+// PUT Update Work Description Log
+app.put('/api/attendance/logs/:id/work-description', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { workDescription } = req.body;
+
+    await pool.query(
+      'UPDATE attendance_logs SET work_description = ? WHERE id = ?',
+      [workDescription, id]
+    );
+
+    if (req.user) {
+      logActivity(req.user.id, req.user.name, 'Update Work Log', `Updated daily work log for Attendance ID ${id}`);
+    }
+
+    res.json({ success: true, message: 'Daily work description updated successfully' });
+    if (req.app.get('io')) {
+      req.app.get('io').emit('attendance_updated');
+    }
+  } catch (err) {
+    console.error('Update work description error:', err);
+    res.status(500).json({ error: 'Failed to update work description' });
   }
 });
 
@@ -1057,7 +1120,7 @@ app.get('/api/analytics', async (req, res) => {
 // CRM Staff Users & Access Control Endpoints
 app.get('/api/crm-users', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT id, name, email, role, status, is_admin as isAdmin, avatar, permissions, created_at as createdAt FROM crm_users ORDER BY created_at DESC');
+    const [rows] = await pool.query('SELECT id, name, email, phone, category, role, status, is_admin as isAdmin, avatar, permissions, created_at as createdAt FROM crm_users ORDER BY created_at DESC');
     res.json({ users: rows });
   } catch (err) {
     console.error("CRM Users Fetch Error:", err);
@@ -1072,9 +1135,9 @@ app.post('/api/crm-users', async (req, res) => {
       return res.status(403).json({ error: 'Only administrators can create users' });
     }
 
-    const { name, email, password, role, permissions, status } = req.body;
-    if (!name || !email || !password) {
-      return res.status(400).json({ error: 'Name, email, and password are required' });
+    const { name, email, phone, category, password, role, permissions, status } = req.body;
+    if (!name || !email || !password || !phone) {
+      return res.status(400).json({ error: 'Name, email, phone number, and password are required' });
     }
 
     // Check if email exists
@@ -1087,20 +1150,23 @@ app.post('/api/crm-users', async (req, res) => {
     const userId = `USR-${Math.floor(100 + Math.random() * 900)}`;
     const avatar = name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
     const userRole = role || 'Staff Member';
+    const userPhone = phone || '';
+    const userCategory = category || 'Staff';
     const userStatus = status || 'Active';
     const userPermissions = JSON.stringify(permissions || ['dashboard']);
     const isSuperAdmin = userRole === 'Super Administrator';
 
     await pool.query(`
-      INSERT INTO crm_users (id, name, email, password_hash, role, status, is_admin, avatar, permissions)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [userId, name, email, hashedPassword, userRole, userStatus, isSuperAdmin, avatar, userPermissions]);
+      INSERT INTO crm_users (id, name, email, phone, category, password_hash, role, status, is_admin, avatar, permissions)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [userId, name, email, userPhone, userCategory, hashedPassword, userRole, userStatus, isSuperAdmin, avatar, userPermissions]);
 
     const newUser = {
-      id: userId, name, email, role: userRole, status: userStatus, isAdmin: isSuperAdmin, avatar, permissions: permissions || ['dashboard']
+      id: userId, name, email, phone: userPhone, category: userCategory, role: userRole, status: userStatus, isAdmin: isSuperAdmin, avatar, permissions: permissions || ['dashboard']
     };
 
     res.status(201).json({ user: newUser, message: 'User created successfully' });
+    if (req.app.get('io')) { req.app.get('io').emit('user_updated'); }
   } catch (err) {
     console.error("Create CRM User Error:", err);
     res.status(500).json({ error: 'Failed to create user' });
@@ -1114,11 +1180,11 @@ app.put('/api/crm-users/:id', async (req, res) => {
     }
 
     const { id } = req.params;
-    const { name, email, password, role, permissions, status } = req.body;
+    const { name, email, phone, category, password, role, permissions, status } = req.body;
     const isSuperAdmin = role === 'Super Administrator';
 
-    let updateQuery = 'UPDATE crm_users SET name = ?, email = ?, role = ?, status = ?, permissions = ?, is_admin = ?';
-    const queryParams = [name, email, role, status, JSON.stringify(permissions), isSuperAdmin];
+    let updateQuery = 'UPDATE crm_users SET name = ?, email = ?, phone = ?, category = ?, role = ?, status = ?, permissions = ?, is_admin = ?';
+    const queryParams = [name, email, phone || '', category || 'Staff', role, status, JSON.stringify(permissions), isSuperAdmin];
 
     if (password) {
       const hashedPassword = await bcrypt.hash(password, 10);
@@ -1131,9 +1197,8 @@ app.put('/api/crm-users/:id', async (req, res) => {
 
     await pool.query(updateQuery, queryParams);
 
-    const [rows] = await pool.query('SELECT id, name, email, role, status, is_admin as isAdmin, avatar, permissions FROM crm_users WHERE id = ?', [id]);
+    const [rows] = await pool.query('SELECT id, name, email, phone, category, role, status, is_admin as isAdmin, avatar, permissions FROM crm_users WHERE id = ?', [id]);
     res.json({ user: rows[0], message: 'User updated successfully' });
-    if (req.app.get('io')) { req.app.get('io').emit('user_updated'); }
     if (req.app.get('io')) { req.app.get('io').emit('user_updated'); }
   } catch (err) {
     console.error("Update CRM User Error:", err);

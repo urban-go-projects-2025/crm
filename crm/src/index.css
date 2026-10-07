@@ -491,7 +491,7 @@ main {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
-  min-width: 700px;
+  min-width: 1050px;
 }
 
 .custom-table th {

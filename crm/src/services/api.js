@@ -195,6 +195,15 @@ export const markAttendance = async (data) => {
   return parseResponse(res, 'Failed to mark attendance');
 };
 
+export const updateWorkDescription = async (logId, workDescription) => {
+  const res = await fetch(apiUrl(`/api/attendance/logs/${logId}/work-description`), {
+    method: 'PUT',
+    headers: getHeaders(),
+    body: JSON.stringify({ workDescription })
+  });
+  return parseResponse(res, 'Failed to update work description');
+};
+
 export const fetchCrmUsers = async () => {
   const res = await fetch(apiUrl('/api/crm-users'), { headers: getHeaders() });
   return parseResponse(res, 'Failed to fetch CRM users');

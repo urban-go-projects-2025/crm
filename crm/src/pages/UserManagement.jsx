@@ -92,11 +92,24 @@ export default function UserManagement({ currentUser, onUsersUpdated }) {
   // Form State
   const [formName, setFormName] = useState('');
   const [formEmail, setFormEmail] = useState('');
+  const [formPhone, setFormPhone] = useState('');
+  const [formCategory, setFormCategory] = useState('Senior Developer');
+  const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [formPassword, setFormPassword] = useState('');
   const [formRole, setFormRole] = useState('');
   const [formPermissions, setFormPermissions] = useState(['dashboard']);
   const [formStatus, setFormStatus] = useState('Active');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const CATEGORY_PRESETS = [
+    'Senior Developer',
+    'Developer',
+    'Engineer',
+    'AC Repair & Electrical',
+    'Plumbing & Cleaning',
+    'Staff',
+    'Custom (Other...)'
+  ];
 
   const loadUsers = async () => {
     try {
@@ -119,6 +132,9 @@ export default function UserManagement({ currentUser, onUsersUpdated }) {
     setEditingUser(null);
     setFormName('');
     setFormEmail('');
+    setFormPhone('');
+    setFormCategory('Senior Developer');
+    setCustomCategoryInput('');
     setFormPassword('');
     setFormRole('');
     setFormPermissions(['dashboard']);
@@ -130,6 +146,15 @@ export default function UserManagement({ currentUser, onUsersUpdated }) {
     setEditingUser(user);
     setFormName(user.name);
     setFormEmail(user.email);
+    setFormPhone(user.phone || user.phone_number || '');
+    const cat = user.category || user.service_category || 'Senior Developer';
+    if (CATEGORY_PRESETS.includes(cat)) {
+      setFormCategory(cat);
+      setCustomCategoryInput('');
+    } else {
+      setFormCategory('Custom (Other...)');
+      setCustomCategoryInput(cat);
+    }
     setFormPassword(user.password || '');
     setFormRole(user.role || '');
     setFormPermissions(user.permissions || []);
@@ -158,16 +183,20 @@ export default function UserManagement({ currentUser, onUsersUpdated }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!formName || !formEmail) {
-      alert('Please fill in required fields (Name & Email)');
+    if (!formName || !formEmail || !formPhone) {
+      alert('Please fill in required fields (Name, Email & Phone Number)');
       return;
     }
 
     try {
       setIsSubmitting(true);
+      const finalCategory = formCategory === 'Custom (Other...)' ? (customCategoryInput || 'Staff') : formCategory;
+
       const payload = {
         name: formName,
         email: formEmail,
+        phone: formPhone,
+        category: finalCategory,
         password: formPassword,
         role: formRole,
         permissions: formPermissions,
@@ -671,6 +700,55 @@ export default function UserManagement({ currentUser, onUsersUpdated }) {
                         onFocus={(e) => { e.target.style.borderColor = '#38BDF8'; e.target.style.background = '#FFFFFF'; e.target.style.boxShadow = '0 0 0 4px rgba(56, 189, 248, 0.1)'; }}
                         onBlur={(e) => { e.target.style.borderColor = '#CBD5E1'; e.target.style.background = '#F8FAFC'; e.target.style.boxShadow = 'none'; }}
                       />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 8 }}>
+                        Phone Number *
+                      </label>
+                      <input 
+                        type="text" 
+                        required
+                        placeholder="+91 98765 43210"
+                        value={formPhone}
+                        onChange={(e) => setFormPhone(e.target.value)}
+                        style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #CBD5E1', fontSize: 14, background: '#F8FAFC', outline: 'none', transition: 'all 0.2s', fontWeight: 500 }}
+                        onFocus={(e) => { e.target.style.borderColor = '#38BDF8'; e.target.style.background = '#FFFFFF'; e.target.style.boxShadow = '0 0 0 4px rgba(56, 189, 248, 0.1)'; }}
+                        onBlur={(e) => { e.target.style.borderColor = '#CBD5E1'; e.target.style.background = '#F8FAFC'; e.target.style.boxShadow = 'none'; }}
+                      />
+                    </div>
+
+                    <div>
+                      <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 8 }}>
+                        Category / Designation
+                      </label>
+                      <select 
+                        value={formCategory}
+                        onChange={(e) => setFormCategory(e.target.value)}
+                        style={{ width: '100%', padding: '14px 16px', borderRadius: 12, border: '1px solid #CBD5E1', fontSize: 14, background: '#F8FAFC', outline: 'none', transition: 'all 0.2s', fontWeight: 600, color: '#0F172A', cursor: 'pointer' }}
+                        onFocus={(e) => { e.target.style.borderColor = '#38BDF8'; e.target.style.background = '#FFFFFF'; e.target.style.boxShadow = '0 0 0 4px rgba(56, 189, 248, 0.1)'; }}
+                        onBlur={(e) => { e.target.style.borderColor = '#CBD5E1'; e.target.style.background = '#F8FAFC'; e.target.style.boxShadow = 'none'; }}
+                      >
+                        <option value="Senior Developer">Senior Developer</option>
+                        <option value="Developer">Developer</option>
+                        <option value="Engineer">Engineer</option>
+                        <option value="AC Repair & Electrical">AC Repair & Electrical</option>
+                        <option value="Plumbing & Cleaning">Plumbing & Cleaning</option>
+                        <option value="Staff">Staff</option>
+                        <option value="Custom (Other...)">Custom (Type below...)</option>
+                      </select>
+
+                      {formCategory === 'Custom (Other...)' && (
+                        <input 
+                          type="text" 
+                          placeholder="Type custom category (e.g. UI/UX Designer)"
+                          value={customCategoryInput}
+                          onChange={(e) => setCustomCategoryInput(e.target.value)}
+                          style={{ width: '100%', marginTop: 10, padding: '12px 14px', borderRadius: 10, border: '1px solid #38BDF8', fontSize: 13, background: '#FFFFFF', outline: 'none', fontWeight: 500 }}
+                        />
+                      )}
                     </div>
                   </div>
 
