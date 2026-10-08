@@ -924,10 +924,6 @@ export default function AttendanceTime() {
               </tbody>
           </table>
         </div>
-
-        <div style={{ marginTop: 16, fontSize: 12, color: '#64748B' }}>
-          Showing {filtered.length} worker attendance records for {selectedDay} Aug 2026 ({currentMonthData.monthName})
-        </div>
       </div>
 
       {/* Modal 1: Mark Attendance (Dark Navy Theme) */}

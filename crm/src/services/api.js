@@ -9,6 +9,14 @@ const getHeaders = () => {
   };
 };
 
+const apiFetch = (path, options = {}) => {
+  return fetch(apiUrl(path), {
+    headers: getHeaders(),
+    credentials: 'include',
+    ...options
+  });
+};
+
 const parseResponse = async (res, defaultError = 'Request failed') => {
   const contentType = res.headers.get('content-type') || '';
   const isJson = contentType.includes('application/json');
@@ -131,30 +139,28 @@ export const triggerDatabaseSync = async () => {
 
 export const loginUser = async (email, password, type) => {
   const endpoint = type === 'admin' ? '/api/auth/admin-login' : '/api/auth/user-login';
-  const res = await fetch(apiUrl(endpoint), {
+  const res = await apiFetch(endpoint, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
   });
   return parseResponse(res, 'Invalid Email or Password');
 };
 
 export const switchUserAccount = async (userId) => {
-  const res = await fetch(apiUrl('/api/auth/impersonate'), {
+  const res = await apiFetch('/api/auth/impersonate', {
     method: 'POST',
-    headers: getHeaders(),
     body: JSON.stringify({ userId })
   });
   return parseResponse(res, 'Failed to switch user account');
 };
 
 export const logoutUser = async () => {
-  const res = await fetch(apiUrl('/api/auth/logout'), { method: 'POST', headers: getHeaders() });
+  const res = await apiFetch('/api/auth/logout', { method: 'POST' });
   return parseResponse(res, 'Failed to logout');
 };
 
 export const fetchMe = async () => {
-  const res = await fetch(apiUrl('/api/auth/me'), { headers: getHeaders() });
+  const res = await apiFetch('/api/auth/me');
   return parseResponse(res, 'Not authenticated');
 };
 
@@ -243,4 +249,38 @@ export const fetchActivityLogs = async (userId) => {
 export const fetchIndianHolidays = async (year) => {
   const res = await fetch(apiUrl(`/api/holidays/IN/${year || new Date().getFullYear()}`), { headers: getHeaders() });
   return parseResponse(res, 'Failed to fetch Indian holidays');
+};
+
+export const fetchLeads = async () => {
+  const res = await fetch(apiUrl(`/api/leads?t=${Date.now()}`), { headers: getHeaders(), credentials: 'include' });
+  return parseResponse(res, 'Failed to fetch leads');
+};
+
+export const createLead = async (data) => {
+  const res = await fetch(apiUrl('/api/leads'), {
+    method: 'POST',
+    headers: getHeaders(),
+    credentials: 'include',
+    body: JSON.stringify(data)
+  });
+  return parseResponse(res, 'Failed to create lead');
+};
+
+export const updateLead = async (id, data) => {
+  const res = await fetch(apiUrl(`/api/leads/${id}`), {
+    method: 'PUT',
+    headers: getHeaders(),
+    credentials: 'include',
+    body: JSON.stringify(data)
+  });
+  return parseResponse(res, 'Failed to update lead');
+};
+
+export const deleteLead = async (id) => {
+  const res = await fetch(apiUrl(`/api/leads/${id}`), {
+    method: 'DELETE',
+    headers: getHeaders(),
+    credentials: 'include'
+  });
+  return parseResponse(res, 'Failed to delete lead');
 };

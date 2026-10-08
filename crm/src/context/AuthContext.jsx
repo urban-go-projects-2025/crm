@@ -6,7 +6,14 @@ const AuthContext = createContext();
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('omw_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   const loadSession = async () => {
@@ -14,12 +21,18 @@ export const AuthProvider = ({ children }) => {
       const res = await fetchMe();
       if (res && res.user) {
         setCurrentUser(res.user);
+        localStorage.setItem('omw_user', JSON.stringify(res.user));
       } else {
         setCurrentUser(null);
+        localStorage.removeItem('omw_user');
       }
     } catch (err) {
       console.error('Session load error:', err);
-      setCurrentUser(null);
+      // Only clear if 401 unauthenticated
+      if (err.message && err.message.includes('401')) {
+        setCurrentUser(null);
+        localStorage.removeItem('omw_user');
+      }
     } finally {
       setIsAuthLoading(false);
     }
@@ -33,6 +46,7 @@ export const AuthProvider = ({ children }) => {
     const res = await apiLoginUser(email, password, type);
     if (res && res.user) {
       setCurrentUser(res.user);
+      localStorage.setItem('omw_user', JSON.stringify(res.user));
       return res.user;
     }
     throw new Error('Login failed');
@@ -42,6 +56,7 @@ export const AuthProvider = ({ children }) => {
     const res = await apiSwitchUser(userId);
     if (res && res.user) {
       setCurrentUser(res.user);
+      localStorage.setItem('omw_user', JSON.stringify(res.user));
       return res.user;
     }
     throw new Error('Switch user failed');
@@ -54,6 +69,7 @@ export const AuthProvider = ({ children }) => {
       console.error(err);
     }
     setCurrentUser(null);
+    localStorage.removeItem('omw_user');
   };
 
   return (

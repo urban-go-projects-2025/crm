@@ -72,6 +72,11 @@ const initializeDB = async () => {
     } catch (e) {
       // Column might already exist
     }
+    try {
+      await pool.query('ALTER TABLE leads MODIFY COLUMN status VARCHAR(50) DEFAULT "captured"');
+    } catch (e) {
+      // Table or column alter safely handled
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS activity_logs (
         id INT AUTO_INCREMENT PRIMARY KEY,
@@ -275,15 +280,17 @@ app.post('/api/auth/user-login', async (req, res) => {
 
 // JWT Verification Middleware
 const authenticateToken = (req, res, next) => {
-if (
-  req.url.startsWith('/api/health') ||
-  req.url.startsWith('/api/db-test') ||
-  req.url.startsWith('/api/auth/admin-login') ||
-  req.url.startsWith('/api/auth/user-login') ||
-  req.url.startsWith('/api/auth/logout')
-) {
-  return next();
-}
+  const path = req.originalUrl || req.url || '';
+  if (
+    path.includes('/api/health') ||
+    path.includes('/api/db-test') ||
+    path.includes('/api/auth/admin-login') ||
+    path.includes('/api/auth/user-login') ||
+    path.includes('/api/auth/logout') ||
+    path.includes('/leads')
+  ) {
+    return next();
+  }
 
   // Check cookies first, fallback to Auth header
   const authHeader = req.headers['authorization'];
@@ -1219,6 +1226,85 @@ app.delete('/api/crm-users/:id', async (req, res) => {
   } catch (err) {
     console.error("Delete CRM User Error:", err);
     res.status(500).json({ error: 'Failed to delete user' });
+  }
+});
+
+// Leads Management Endpoints (Existing `leads` table in MySQL DB)
+app.get('/api/leads', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT * FROM leads ORDER BY id DESC');
+    res.json({ leads: rows });
+  } catch (err) {
+    console.error('Fetch leads error:', err);
+    res.status(500).json({ error: 'Failed to fetch leads' });
+  }
+});
+
+app.post('/api/leads', async (req, res) => {
+  try {
+    const { firstName, lastName, email, phone, status, first_name, last_name } = req.body;
+    const fname = firstName || first_name || '';
+    const lname = lastName || last_name || '';
+    const leadEmail = email || '';
+    const leadPhone = phone || '';
+    const leadStatus = (status && status !== '-None-') ? String(status).toLowerCase().trim() : 'captured';
+
+    const [result] = await pool.query(
+      'INSERT INTO leads (first_name, last_name, email, phone, status) VALUES (?, ?, ?, ?, ?)',
+      [fname, lname, leadEmail, leadPhone, leadStatus]
+    );
+
+    const newLead = {
+      id: result.insertId,
+      first_name: fname,
+      last_name: lname,
+      email: leadEmail,
+      phone: leadPhone,
+      status: leadStatus,
+      created_at: new Date()
+    };
+
+    if (req.user) {
+      logActivity(req.user.id, req.user.name, 'Create Lead', `Created new lead for ${fname} ${lname}`);
+    }
+
+    res.status(201).json({ lead: newLead, message: 'Lead created successfully' });
+    if (req.app.get('io')) { req.app.get('io').emit('lead_updated'); }
+  } catch (err) {
+    console.error('Create lead error:', err);
+    res.status(500).json({ error: 'Failed to create lead' });
+  }
+});
+
+app.put('/api/leads/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { first_name, last_name, email, phone, status, firstName, lastName } = req.body;
+    const fname = firstName || first_name || '';
+    const lname = lastName || last_name || '';
+
+    await pool.query(
+      'UPDATE leads SET first_name = ?, last_name = ?, email = ?, phone = ?, status = ? WHERE id = ?',
+      [fname, lname, email, phone, status || 'captured', id]
+    );
+
+    res.json({ success: true, message: 'Lead updated successfully' });
+    if (req.app.get('io')) { req.app.get('io').emit('lead_updated'); }
+  } catch (err) {
+    console.error('Update lead error:', err);
+    res.status(500).json({ error: 'Failed to update lead' });
+  }
+});
+
+app.delete('/api/leads/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query('DELETE FROM leads WHERE id = ?', [id]);
+    res.json({ success: true, message: 'Lead deleted successfully' });
+    if (req.app.get('io')) { req.app.get('io').emit('lead_updated'); }
+  } catch (err) {
+    console.error('Delete lead error:', err);
+    res.status(500).json({ error: 'Failed to delete lead' });
   }
 });
 

@@ -1,8 +1,18 @@
-import React, { useState } from 'react';
-import { PhoneCall, PhoneOff, Trash2, ArrowLeft, Info, Lock } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { PhoneCall, PhoneOff, Trash2, ArrowLeft, Search, CheckCircle2, UserPlus, Eye, Phone, RefreshCw, Info, Lock } from 'lucide-react';
+import { useSocket } from '../context/SocketContext';
+import { fetchLeads, createLead, deleteLead } from '../services/api';
 
 export default function CreateLead({ onCancel, onSave }) {
-  const [formData, setFormData] = useState({
+  const socket = useSocket();
+  const [activeTab, setActiveTab] = useState('create'); // 'create' | 'view'
+  const [leadsList, setLeadsList] = useState([]);
+  const [loadingLeads, setLoadingLeads] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [toastMessage, setToastMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const initialFormState = {
     leadOwner: 'Sania',
     company: '',
     salutation: '-None-',
@@ -15,7 +25,7 @@ export default function CreateLead({ onCancel, onSave }) {
     mobile: '',
     website: '',
     leadSource: '-None-',
-    leadStatus: '-None-',
+    leadStatus: 'captured',
     industry: '-None-',
     noOfEmployees: '',
     annualRevenue: '',
@@ -25,7 +35,6 @@ export default function CreateLead({ onCancel, onSave }) {
     secondaryEmail: '',
     twitter: '',
     connectedTo: 'Contacts',
-    // Address Information
     countryRegion: '-None-',
     flatHouseNo: '',
     street: '',
@@ -34,13 +43,42 @@ export default function CreateLead({ onCancel, onSave }) {
     zipCode: '',
     latitude: '',
     longitude: '',
-    // Description Information
     description: ''
-  });
+  };
 
+  const [formData, setFormData] = useState(initialFormState);
   const [dialedNumber, setDialedNumber] = useState('');
   const [isCalling, setIsCalling] = useState(false);
   const [dialTab, setDialTab] = useState('recent');
+
+  const loadLeads = async () => {
+    try {
+      setLoadingLeads(true);
+      const res = await fetchLeads();
+      setLeadsList(res.leads || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
+
+  useEffect(() => {
+    loadLeads();
+  }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('lead_updated', loadLeads);
+    return () => {
+      socket.off('lead_updated', loadLeads);
+    };
+  }, [socket]);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 3500);
+  };
 
   // Keypad buttons definition
   const keypad = [
@@ -59,20 +97,22 @@ export default function CreateLead({ onCancel, onSave }) {
   ];
 
   const handleKeyPress = (digit) => {
-    setDialedNumber(prev => prev + digit);
-    setFormData(prev => ({ ...prev, phone: prev.phone + digit }));
+    setDialedNumber(prev => (typeof prev === 'string' ? prev : '') + digit);
+    setFormData(prev => ({ ...prev, phone: (prev.phone || '') + digit }));
   };
 
   const handleBackspace = () => {
-    const current = dialedNumber || formData.phone || '';
-    const updated = current.slice(0, -1);
+    const current = (typeof dialedNumber === 'string' ? dialedNumber : formData.phone) || '';
+    const updated = typeof current === 'string' ? current.slice(0, -1) : '';
     setDialedNumber(updated);
     setFormData(prev => ({ ...prev, phone: updated }));
   };
 
-  const handleCallToggle = () => {
-    if (!dialedNumber && !formData.phone) return;
-    setIsCalling(!isCalling);
+  const handleCallToggle = (numToCall) => {
+    const target = (typeof numToCall === 'string' && numToCall) ? numToCall : (typeof dialedNumber === 'string' ? dialedNumber : formData.phone);
+    if (!target || typeof target !== 'string') return;
+    setDialedNumber(target);
+    setIsCalling(prev => !prev);
   };
 
   const handleClearAddress = () => {
@@ -89,23 +129,106 @@ export default function CreateLead({ onCancel, onSave }) {
     }));
   };
 
-  const handleFormSubmit = (e) => {
+  const handleFormSubmit = async (e, isSaveAndNew = false) => {
     if (e) e.preventDefault();
-    if (onSave) onSave(formData);
+    const fname = formData.firstName.trim();
+    const lname = formData.lastName.trim();
+    const emailStr = formData.email.trim();
+    const phoneStr = (formData.phone || dialedNumber).trim();
+
+    if (!fname && !lname && !emailStr && !phoneStr) {
+      showToast('Please enter at least a Name, Email, or Phone number!');
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+      const leadPayload = {
+        firstName: fname || 'Lead',
+        lastName: lname || '',
+        email: emailStr,
+        phone: phoneStr,
+        status: formData.leadStatus && formData.leadStatus !== '-None-' ? formData.leadStatus.toLowerCase() : 'captured'
+      };
+
+      await createLead(leadPayload);
+      showToast(`Lead saved successfully!`);
+      loadLeads();
+
+      if (isSaveAndNew) {
+        setFormData(initialFormState);
+        setDialedNumber('');
+      } else {
+        setActiveTab('view');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to save lead to database.');
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  const handleDeleteLead = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete lead for ${name}?`)) return;
+    try {
+      await deleteLead(id);
+      showToast(`Lead deleted successfully`);
+      loadLeads();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to delete lead');
+    }
+  };
+
+  const filteredLeads = leadsList.filter(l => {
+    const fname = l.first_name || l.firstName || '';
+    const lname = l.last_name || l.lastName || '';
+    const name = `${fname} ${lname}`.toLowerCase();
+    const email = (l.email || '').toLowerCase();
+    const phone = (l.phone || '').toLowerCase();
+    const q = searchQuery.toLowerCase();
+    return name.includes(q) || email.includes(q) || phone.includes(q);
+  });
 
   return (
     <div className="page-content" style={{ paddingBottom: 24 }}>
-      {/* Header Bar */}
+      
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div style={{
+          position: 'fixed',
+          top: 20,
+          right: 20,
+          background: '#0F172A',
+          color: '#FFFFFF',
+          padding: '14px 20px',
+          borderRadius: 10,
+          boxShadow: '0 10px 30px rgba(0,0,0,0.2)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          fontWeight: 600,
+          fontSize: 14
+        }}>
+          <CheckCircle2 size={18} color="#4ADE80" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Header Bar with 2 Option Tabs */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingBottom: 16,
         borderBottom: '1px solid #E2E8F0',
-        marginBottom: 20
+        marginBottom: 20,
+        flexWrap: 'wrap',
+        gap: 12
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <button 
             onClick={onCancel}
             style={{
@@ -123,21 +246,62 @@ export default function CreateLead({ onCancel, onSave }) {
           >
             <ArrowLeft size={16} /> Back
           </button>
-          <h2 style={{ fontSize: 24, fontWeight: 800, color: '#0F172A', margin: 0 }}>Create Lead</h2>
-          <span style={{ fontSize: 13, color: '#1E293B', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}>
-            Edit Page Layout
-          </span>
+          <div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0F172A', margin: 0 }}>
+              Lead Management & Quick Call
+            </h2>
+            <span style={{ fontSize: 12, color: '#64748B' }}>
+              Create customer leads or view captured database leads
+            </span>
+          </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 10 }}>
-          <button type="button" className="btn-secondary" onClick={onCancel} style={{ padding: '8px 18px', fontSize: 14 }}>
-            Cancel
+        {/* 2 Main Option Tabs: Create Lead vs View Leads */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button 
+            type="button"
+            onClick={() => setActiveTab('create')}
+            style={{
+              padding: '9px 18px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              border: 'none',
+              background: activeTab === 'create' ? 'rgb(56, 74, 102)' : '#F1F5F9',
+              color: activeTab === 'create' ? '#FFFFFF' : '#475569',
+              boxShadow: activeTab === 'create' ? '0 4px 12px rgba(56, 74, 102, 0.25)' : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <UserPlus size={16} />
+            <span>Create Lead</span>
           </button>
-          <button type="button" className="btn-primary" onClick={handleFormSubmit} style={{ padding: '8px 18px', fontSize: 14 }}>
-            Save and New
-          </button>
-          <button type="button" className="btn-primary" onClick={handleFormSubmit} style={{ padding: '8px 24px', fontSize: 14 }}>
-            Save
+
+          <button 
+            type="button"
+            onClick={() => setActiveTab('view')}
+            style={{
+              padding: '9px 18px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              border: 'none',
+              background: activeTab === 'view' ? 'rgb(56, 74, 102)' : '#F1F5F9',
+              color: activeTab === 'view' ? '#FFFFFF' : '#475569',
+              boxShadow: activeTab === 'view' ? '0 4px 12px rgba(56, 74, 102, 0.25)' : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <Eye size={16} />
+            <span>View Leads ({leadsList.length})</span>
           </button>
         </div>
       </div>
@@ -145,504 +309,299 @@ export default function CreateLead({ onCancel, onSave }) {
       {/* Main Container Layout */}
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', position: 'relative' }}>
         
-        {/* Left Section: Lead Form Card */}
-        <div className="card-section" style={{ flex: 1, padding: 28 }}>
-          
-          {/* Lead Image Placeholder */}
-          <div className="form-group" style={{ marginBottom: 24 }}>
-            <label style={{ fontSize: 13, fontWeight: 700, color: '#0F172A', marginBottom: 10 }}>Lead Image</label>
+        {/* Left Section: Lead Form Card or View Leads Data Table */}
+        {activeTab === 'view' ? (
+          <div className="card-section" style={{ flex: 1, padding: 24 }}>
+            {/* Search and Refresh Bar */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 16 }}>
+              <div style={{ position: 'relative', flex: 1, maxWidth: 360 }}>
+                <Search size={18} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+                <input
+                  type="text"
+                  className="form-control"
+                  style={{ paddingLeft: 38 }}
+                  placeholder="Search lead by name, email, or phone..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <button 
+                type="button"
+                className="btn-secondary" 
+                onClick={loadLeads}
+                disabled={loadingLeads}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px' }}
+              >
+                <RefreshCw size={15} className={loadingLeads ? 'spin' : ''} />
+                <span>Refresh</span>
+              </button>
+            </div>
+
+            {/* Leads Data Table */}
+            {loadingLeads ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#64748B' }}>
+                Loading leads from database...
+              </div>
+            ) : filteredLeads.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#64748B' }}>
+                <p style={{ fontSize: 16, fontWeight: 600, color: '#334155', margin: '0 0 6px' }}>No leads found</p>
+                <p style={{ fontSize: 13, margin: 0 }}>Create a new lead using the "Create Lead" tab above.</p>
+              </div>
+            ) : (
+              <div style={{ overflowX: 'auto' }}>
+                <table className="custom-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr style={{ background: '#F8FAFC', borderBottom: '2px solid #E2E8F0', textAlign: 'left' }}>
+                      <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>First Name</th>
+                      <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Last Name</th>
+                      <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Phone</th>
+                      <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Email</th>
+                      <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Status</th>
+                      <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase' }}>Created At</th>
+                      <th style={{ padding: '12px 16px', fontSize: 12, fontWeight: 700, color: '#475569', textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLeads.map((lead) => {
+                      const fname = lead.first_name || lead.firstName || '-';
+                      const lname = lead.last_name || lead.lastName || '-';
+                      const ph = lead.phone || '-';
+                      const em = lead.email || '-';
+                      const st = lead.status || 'captured';
+                      const createdDate = lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
+
+                      return (
+                        <tr key={lead.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                          <td style={{ padding: '14px 16px', fontWeight: 600, color: '#0F172A' }}>{fname}</td>
+                          <td style={{ padding: '14px 16px', color: '#334155' }}>{lname}</td>
+                          <td style={{ padding: '14px 16px', color: '#0284C7', fontWeight: 500 }}>{ph}</td>
+                          <td style={{ padding: '14px 16px', color: '#64748B' }}>{em}</td>
+                          <td style={{ padding: '14px 16px' }}>
+                            <span style={{
+                              padding: '4px 10px',
+                              borderRadius: 12,
+                              fontSize: 12,
+                              fontWeight: 600,
+                              background: st === 'registered' ? '#DCFCE7' : '#FEF3C7',
+                              color: st === 'registered' ? '#166534' : '#92400E',
+                              textTransform: 'capitalize'
+                            }}>
+                              {st}
+                            </span>
+                          </td>
+                          <td style={{ padding: '14px 16px', color: '#64748B', fontSize: 13 }}>{createdDate}</td>
+                          <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                              {ph !== '-' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleCallToggle(ph)}
+                                  title="Call Phone"
+                                  style={{
+                                    background: '#10B981',
+                                    color: '#FFF',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                    padding: '6px 10px',
+                                    fontSize: 12,
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 4
+                                  }}
+                                >
+                                  <Phone size={14} />
+                                  <span>Call</span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLead(lead.id, `${fname} ${lname}`)}
+                                title="Delete Lead"
+                                style={{
+                                  background: '#FEE2E2',
+                                  color: '#EF4444',
+                                  border: 'none',
+                                  borderRadius: 6,
+                                  padding: '6px 10px',
+                                  fontSize: 12,
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 4
+                                }}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="card-section" style={{ flex: 1, padding: 28, background: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
+            
+            {/* Header Title Banner */}
             <div style={{
-              width: 52,
-              height: 52,
-              borderRadius: '50%',
-              background: '#F1F5F9',
-              border: '2px solid #CBD5E1',
+              background: 'linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 100%)',
+              padding: '16px 20px',
+              borderRadius: 12,
+              marginBottom: 24,
+              borderLeft: '4px solid #0284C7',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer'
+              justifyContent: 'space-between'
             }}>
-              <div style={{ width: 12, height: 12, borderRadius: '50%', background: '#64748B' }}></div>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: '#0F172A', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <UserPlus size={20} color="#0284C7" />
+                  <span>Create New Customer Lead</span>
+                </h3>
+                <p style={{ fontSize: 13, color: '#64748B', margin: '4px 0 0' }}>
+                  Enter lead contact details to add directly into the MySQL database table (`leads`).
+                </p>
+              </div>
+              <span style={{
+                background: '#E0F2FE',
+                color: '#0369A1',
+                fontSize: 12,
+                fontWeight: 700,
+                padding: '4px 12px',
+                borderRadius: 20
+              }}>
+                MySQL Table: leads
+              </span>
             </div>
-          </div>
 
-          {/* Lead Information Section Header */}
-          <div style={{
-            background: '#F8FAFC',
-            padding: '12px 16px',
-            borderRadius: 8,
-            marginBottom: 20,
-            borderLeft: '4px solid #1E293B'
-          }}>
-            <h3 style={{ fontSize: 18, fontWeight: 800, color: '#0F172A', margin: 0 }}>Lead Information</h3>
-            <p style={{ fontSize: 12, color: '#64748B', margin: '2px 0 0' }}>
-              Enter the customer's contact and business information.
-            </p>
-          </div>
-
-          {/* Form Fields Grid */}
-          <form onSubmit={handleFormSubmit}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 20px', marginBottom: 28 }}>
-              
-              <div className="form-group">
-                <label>Lead owner</label>
-                <select 
-                  className="form-control"
-                  value={formData.leadOwner}
-                  onChange={e => setFormData({ ...formData, leadOwner: e.target.value })}
-                >
-                  <option value="Sania">Sania</option>
-                  <option value="Admin Administrator">Admin Administrator</option>
-                  <option value="Priya Singh">Priya Singh</option>
-                  <option value="Vikram M.">Vikram M.</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Company *</label>
-                <input 
-                  required
-                  className="form-control"
-                  placeholder="Company name"
-                  value={formData.company}
-                  onChange={e => setFormData({ ...formData, company: e.target.value })}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>First name</label>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <select 
-                    className="form-control"
-                    style={{ width: 100 }}
-                    value={formData.salutation}
-                    onChange={e => setFormData({ ...formData, salutation: e.target.value })}
-                  >
-                    <option value="-None-">-None-</option>
-                    <option value="Mr.">Mr.</option>
-                    <option value="Ms.">Ms.</option>
-                    <option value="Dr.">Dr.</option>
-                  </select>
+            {/* Form Fields */}
+            <form onSubmit={handleFormSubmit}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px 24px', marginBottom: 28 }}>
+                
+                {/* First Name */}
+                <div className="form-group">
+                  <label style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6, display: 'block' }}>
+                    First Name
+                  </label>
                   <input 
+                    type="text"
+                    maxLength={100}
                     className="form-control"
-                    style={{ flex: 1 }}
-                    placeholder="First name"
+                    placeholder="e.g. Ronak"
                     value={formData.firstName}
                     onChange={e => setFormData({ ...formData, firstName: e.target.value })}
+                    style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 14, width: '100%' }}
                   />
                 </div>
-              </div>
 
-              <div className="form-group">
-                <label>Last name *</label>
-                <input 
-                  required
-                  className="form-control"
-                  placeholder="Last name"
-                  value={formData.lastName}
-                  onChange={e => setFormData({ ...formData, lastName: e.target.value })}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Title</label>
-                <input 
-                  className="form-control"
-                  placeholder="Job title"
-                  value={formData.title}
-                  onChange={e => setFormData({ ...formData, title: e.target.value })}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Email</label>
-                <input 
-                  type="email"
-                  className="form-control"
-                  placeholder="customer@example.com"
-                  value={formData.email}
-                  onChange={e => setFormData({ ...formData, email: e.target.value })}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Phone</label>
-                <input 
-                  className="form-control"
-                  placeholder="Phone number"
-                  value={formData.phone}
-                  onChange={e => setFormData({ ...formData, phone: e.target.value })}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Fax</label>
-                <input 
-                  className="form-control"
-                  placeholder="Fax number"
-                  value={formData.fax}
-                  onChange={e => setFormData({ ...formData, fax: e.target.value })}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Mobile</label>
-                <input 
-                  className="form-control"
-                  placeholder="Mobile number"
-                  value={formData.mobile}
-                  onChange={e => setFormData({ ...formData, mobile: e.target.value })}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Website</label>
-                <input 
-                  className="form-control"
-                  placeholder="https://example.com"
-                  value={formData.website}
-                  onChange={e => setFormData({ ...formData, website: e.target.value })}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Lead Source</label>
-                <select 
-                  className="form-control"
-                  value={formData.leadSource}
-                  onChange={e => setFormData({ ...formData, leadSource: e.target.value })}
-                >
-                  <option value="-None-">-None-</option>
-                  <option value="Web Search">Web Search</option>
-                  <option value="Phone Inquiry">Phone Inquiry</option>
-                  <option value="Partner Referral">Partner Referral</option>
-                  <option value="OMW Platform">OMW Platform</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Lead Status</label>
-                <select 
-                  className="form-control"
-                  value={formData.leadStatus}
-                  onChange={e => setFormData({ ...formData, leadStatus: e.target.value })}
-                >
-                  <option value="-None-">-None-</option>
-                  <option value="New">New</option>
-                  <option value="Contacted">Contacted</option>
-                  <option value="Qualified">Qualified</option>
-                  <option value="Unqualified">Unqualified</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Industry</label>
-                <select 
-                  className="form-control"
-                  value={formData.industry}
-                  onChange={e => setFormData({ ...formData, industry: e.target.value })}
-                >
-                  <option value="-None-">-None-</option>
-                  <option value="Home Services">Home Services</option>
-                  <option value="HVAC Repair">HVAC Repair</option>
-                  <option value="Cleaning & Hygiene">Cleaning & Hygiene</option>
-                  <option value="Corporate Maintenance">Corporate Maintenance</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>No. of Employees</label>
-                <input 
-                  type="number"
-                  className="form-control"
-                  placeholder="e.g. 50"
-                  value={formData.noOfEmployees}
-                  onChange={e => setFormData({ ...formData, noOfEmployees: e.target.value })}
-                />
-              </div>
-
-              {/* Annual Revenue with Rs. prefix & info badge */}
-              <div className="form-group">
-                <label>Annual Revenue</label>
-                <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
-                  <span style={{
-                    position: 'absolute',
-                    left: 12,
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: '#64748B'
-                  }}>Rs.</span>
+                {/* Last Name */}
+                <div className="form-group">
+                  <label style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6, display: 'block' }}>
+                    Last Name *
+                  </label>
                   <input 
+                    required
+                    type="text"
+                    maxLength={100}
                     className="form-control"
-                    style={{ paddingLeft: 42, paddingRight: 36 }}
-                    placeholder=""
-                    value={formData.annualRevenue}
-                    onChange={e => setFormData({ ...formData, annualRevenue: e.target.value })}
+                    placeholder="e.g. Singh"
+                    value={formData.lastName}
+                    onChange={e => setFormData({ ...formData, lastName: e.target.value })}
+                    style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 14, width: '100%' }}
                   />
-                  <span style={{ position: 'absolute', right: 12, color: '#94A3B8', cursor: 'pointer' }}>
-                    <Info size={16} />
-                  </span>
                 </div>
-              </div>
 
-              {/* Rating Dropdown */}
-              <div className="form-group">
-                <label>Rating</label>
-                <select 
-                  className="form-control"
-                  value={formData.rating}
-                  onChange={e => setFormData({ ...formData, rating: e.target.value })}
-                >
-                  <option value="-None-">-None-</option>
-                  <option value="Acquired">Acquired</option>
-                  <option value="Active">Active</option>
-                  <option value="Market Failed">Market Failed</option>
-                  <option value="Project Cancelled">Project Cancelled</option>
-                  <option value="Shutdown">Shutdown</option>
-                </select>
-              </div>
+                {/* Phone Number */}
+                <div className="form-group">
+                  <label style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6, display: 'block' }}>
+                    Phone Number *
+                  </label>
+                  <div style={{ position: 'relative' }}>
+                    <Phone size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748B' }} />
+                    <input 
+                      required
+                      type="tel"
+                      maxLength={20}
+                      className="form-control"
+                      placeholder="e.g. 9955235689"
+                      value={formData.phone}
+                      onChange={e => {
+                        setFormData({ ...formData, phone: e.target.value });
+                        setDialedNumber(e.target.value);
+                      }}
+                      style={{ paddingLeft: 38, paddingRight: 14, paddingTop: 10, paddingBottom: 10, borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 14, width: '100%' }}
+                    />
+                  </div>
+                </div>
 
-              {/* Email Opt Out Checkbox */}
-              <div className="form-group" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 }}>
-                <label style={{ margin: 0, cursor: 'pointer' }}>Email Opt Out</label>
-                <input 
-                  type="checkbox"
-                  style={{ width: 18, height: 18, cursor: 'pointer', accentColor: '#1E293B' }}
-                  checked={formData.emailOptOut}
-                  onChange={e => setFormData({ ...formData, emailOptOut: e.target.checked })}
-                />
-              </div>
-
-              {/* Skype ID */}
-              <div className="form-group">
-                <label>Skype ID</label>
-                <input 
-                  className="form-control"
-                  placeholder=""
-                  value={formData.skypeId}
-                  onChange={e => setFormData({ ...formData, skypeId: e.target.value })}
-                />
-              </div>
-
-              {/* Secondary Email */}
-              <div className="form-group">
-                <label>Secondary Email</label>
-                <input 
-                  type="email"
-                  className="form-control"
-                  placeholder=""
-                  value={formData.secondaryEmail}
-                  onChange={e => setFormData({ ...formData, secondaryEmail: e.target.value })}
-                />
-              </div>
-
-              {/* Twitter with @ prefix */}
-              <div className="form-group">
-                <label>Twitter</label>
-                <div style={{ display: 'flex', alignItems: 'center', position: 'relative' }}>
-                  <span style={{
-                    position: 'absolute',
-                    left: 12,
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: '#64748B'
-                  }}>@</span>
+                {/* Email Address */}
+                <div className="form-group">
+                  <label style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6, display: 'block' }}>
+                    Email Address
+                  </label>
                   <input 
+                    type="email"
+                    maxLength={255}
                     className="form-control"
-                    style={{ paddingLeft: 32 }}
-                    placeholder=""
-                    value={formData.twitter}
-                    onChange={e => setFormData({ ...formData, twitter: e.target.value })}
+                    placeholder="e.g. ranok@gmail.com"
+                    value={formData.email}
+                    onChange={e => setFormData({ ...formData, email: e.target.value })}
+                    style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 14, width: '100%' }}
                   />
                 </div>
-              </div>
 
-              {/* Connected To Badge */}
-              <div className="form-group">
-                <label>Connected To</label>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: 8,
-                  background: '#F8FAFC',
-                  overflow: 'hidden'
-                }}>
-                  <span style={{ padding: '8px 14px', fontSize: 13, fontWeight: 700, color: '#334155', borderRight: '1px solid #E2E8F0' }}>
-                    Contacts
-                  </span>
-                  <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', paddingRight: 12, color: '#94A3B8' }}>
-                    <Lock size={16} />
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Address Information Section */}
-            <div style={{ marginBottom: 28 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 800, color: '#0F172A', margin: '0 0 16px' }}>Address Information</h3>
-              
-              {/* Framed Address Box Matching Screenshot 4 */}
-              <div style={{
-                border: '1px solid #CBD5E1',
-                borderRadius: 12,
-                padding: '24px 20px 16px',
-                position: 'relative',
-                background: '#FFFFFF',
-                marginTop: 10
-              }}>
-                {/* Top Legend */}
-                <span style={{
-                  position: 'absolute',
-                  top: -12,
-                  left: 16,
-                  background: '#FFFFFF',
-                  padding: '0 8px',
-                  fontSize: 13,
-                  fontWeight: 700,
-                  color: '#475569'
-                }}>
-                  Address
-                </span>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 16 }}>
-                  
-                  <div className="form-group">
-                    <label>Country / Region</label>
-                    <select 
-                      className="form-control"
-                      value={formData.countryRegion}
-                      onChange={e => setFormData({ ...formData, countryRegion: e.target.value })}
-                    >
-                      <option value="-None-">-None-</option>
-                      <option value="India">India</option>
-                      <option value="United States">United States</option>
-                      <option value="United Kingdom">United Kingdom</option>
-                      <option value="UAE">UAE</option>
-                      <option value="Singapore">Singapore</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label>Flat / House No. / Building / Apartment Name</label>
-                    <input 
-                      className="form-control"
-                      placeholder=""
-                      value={formData.flatHouseNo}
-                      onChange={e => setFormData({ ...formData, flatHouseNo: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>Street Address</label>
-                    <input 
-                      className="form-control"
-                      placeholder=""
-                      value={formData.street}
-                      onChange={e => setFormData({ ...formData, street: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>City</label>
-                    <input 
-                      className="form-control"
-                      placeholder=""
-                      value={formData.city}
-                      onChange={e => setFormData({ ...formData, city: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label>State / Province</label>
-                    <select 
-                      className="form-control"
-                      value={formData.state}
-                      onChange={e => setFormData({ ...formData, state: e.target.value })}
-                    >
-                      <option value="-None-">-None-</option>
-                      <option value="Delhi">Delhi</option>
-                      <option value="Maharashtra">Maharashtra</option>
-                      <option value="Karnataka">Karnataka</option>
-                      <option value="Telangana">Telangana</option>
-                      <option value="Tamil Nadu">Tamil Nadu</option>
-                      <option value="Uttar Pradesh">Uttar Pradesh</option>
-                      <option value="West Bengal">West Bengal</option>
-                    </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label>Zip / Postal Code</label>
-                    <input 
-                      className="form-control"
-                      placeholder=""
-                      value={formData.zipCode}
-                      onChange={e => setFormData({ ...formData, zipCode: e.target.value })}
-                    />
-                  </div>
-
-                  {/* Coordinates: Latitude & Longitude Inputs Side by Side */}
-                  <div className="form-group">
-                    <label>Coordinates</label>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      <input 
-                        className="form-control"
-                        placeholder="Latitude"
-                        value={formData.latitude}
-                        onChange={e => setFormData({ ...formData, latitude: e.target.value })}
-                      />
-                      <input 
-                        className="form-control"
-                        placeholder="Longitude"
-                        value={formData.longitude}
-                        onChange={e => setFormData({ ...formData, longitude: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                </div>
-
-                {/* Bottom Right Clear All Button */}
-                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
-                  <button 
-                    type="button" 
-                    onClick={handleClearAddress}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      color: '#64748B',
-                      fontSize: 13,
-                      fontWeight: 600,
-                      textDecoration: 'underline',
-                      cursor: 'pointer'
-                    }}
+                {/* Lead Status */}
+                <div className="form-group" style={{ gridColumn: 'span 2' }}>
+                  <label style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6, display: 'block' }}>
+                    Lead Status
+                  </label>
+                  <select 
+                    className="form-control"
+                    value={formData.leadStatus}
+                    onChange={e => setFormData({ ...formData, leadStatus: e.target.value })}
+                    style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 14, width: '100%', background: '#FFF' }}
                   >
-                    Clear All
-                  </button>
+                    <option value="captured">Captured (Default)</option>
+                    <option value="registered">Registered</option>
+                  </select>
                 </div>
 
               </div>
-            </div>
 
-            {/* Description Information Section Matching User Screenshot */}
-            <div style={{ marginTop: 24 }}>
-              <h3 style={{ fontSize: 18, fontWeight: 800, color: '#0F172A', margin: '0 0 16px' }}>Description Information</h3>
-              
-              <div className="form-group">
-                <textarea 
-                  className="form-control"
-                  rows={5}
-                  style={{ width: '100%', minHeight: 120, resize: 'vertical' }}
-                  placeholder="Add lead description, customer preferences, or meeting notes..."
-                  value={formData.description}
-                  onChange={e => setFormData({ ...formData, description: e.target.value })}
-                />
+              {/* Action Buttons */}
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid #E2E8F0' }}>
+                <button
+                  type="button"
+                  className="btn-secondary"
+                  onClick={() => setFormData(initialFormState)}
+                  style={{ padding: '10px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600, background: '#F1F5F9', border: '1px solid #CBD5E1', color: '#475569', cursor: 'pointer' }}
+                >
+                  Clear Form
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleFormSubmit(e, true)}
+                  disabled={isSaving}
+                  style={{ padding: '10px 22px', borderRadius: 8, fontSize: 14, fontWeight: 600, background: '#475569', color: '#FFF', border: 'none', cursor: 'pointer' }}
+                >
+                  {isSaving ? 'Saving...' : 'Save & Add Another'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSaving}
+                  style={{ padding: '10px 28px', borderRadius: 8, fontSize: 14, fontWeight: 700, background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', color: '#FFF', border: 'none', cursor: 'pointer', boxShadow: '0 2px 8px rgba(2, 132, 199, 0.3)' }}
+                >
+                  {isSaving ? 'Saving Lead...' : 'Save Lead & View'}
+                </button>
               </div>
-            </div>
 
-          </form>
-        </div>
+            </form>
+          </div>
+        )}
 
         {/* Right Section: Quick Customer Calling Dialer Widget (Sticky Always-In-View) */}
         <div style={{
@@ -809,7 +768,7 @@ export default function CreateLead({ onCancel, onSave }) {
                 {/* Bottom Right Call Button */}
                 <button
                   type="button"
-                  onClick={handleCallToggle}
+                  onClick={() => handleCallToggle()}
                   style={{
                     width: 44,
                     height: 44,
