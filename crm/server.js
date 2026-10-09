@@ -9,6 +9,8 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import http from 'http';
 import { Server } from 'socket.io';
+import nodemailer from 'nodemailer';
+import cookieParser from 'cookie-parser';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'omw_crm_super_secret_key';
 
@@ -20,8 +22,22 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 const PORT = process.env.PORT || 5000;
 
+// Ensure omw-poster.png exists in public/ folder
+try {
+  const srcImage = path.join(__dirname, '..', 'omw-email', 'image.png');
+  const destPublicImage = path.join(__dirname, 'public', 'omw-poster.png');
+  const destRootImage = path.join(__dirname, 'omw-poster.png');
+  if (fs.existsSync(srcImage)) {
+    if (!fs.existsSync(destPublicImage)) fs.copyFileSync(srcImage, destPublicImage);
+    if (!fs.existsSync(destRootImage)) fs.copyFileSync(srcImage, destRootImage);
+  }
+} catch (e) {
+  console.log('Poster image copy check:', e.message);
+}
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
 
 // Expose io to all routes if needed, or we can just use io directly since they are in the same file
 app.set('io', io);
@@ -215,7 +231,7 @@ app.post('/api/auth/admin-login', async (req, res) => {
     res.cookie('omw_crm_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 8 * 60 * 60 * 1000 // 8 hours
     }).json({
       message: 'Login successful',
@@ -256,7 +272,7 @@ app.post('/api/auth/user-login', async (req, res) => {
     res.cookie('omw_crm_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 8 * 60 * 60 * 1000 // 8 hours
     }).json({
       message: 'Login successful',
@@ -338,7 +354,7 @@ app.post('/api/auth/impersonate', authenticateToken, async (req, res) => {
     res.cookie('omw_crm_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: 'lax',
       maxAge: 8 * 60 * 60 * 1000
     }).json({
       message: `Successfully switched view to ${targetUser.name}`,
@@ -1305,6 +1321,110 @@ app.delete('/api/leads/:id', async (req, res) => {
   } catch (err) {
     console.error('Delete lead error:', err);
     res.status(500).json({ error: 'Failed to delete lead' });
+  }
+});
+
+// Bulk Email Sender API (Hostinger SMTP from omw-email)
+app.post('/api/leads/send-email', async (req, res) => {
+  try {
+    const { recipients, subject, customHtml } = req.body;
+    
+    let emailList = [];
+    if (Array.isArray(recipients)) {
+      emailList = recipients;
+    } else if (typeof recipients === 'string') {
+      emailList = recipients.split(/[\n,;]+/).map(e => e.trim()).filter(Boolean);
+    }
+    
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const validEmails = Array.from(new Set(emailList.filter(e => emailRegex.test(e))));
+    
+    if (validEmails.length === 0) {
+      return res.status(400).json({ error: 'No valid recipient email addresses provided' });
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.hostinger.com',
+      port: Number(process.env.SMTP_PORT) || 465,
+      secure: true,
+      auth: {
+        user: process.env.SMTP_USER || 'marketing@omwhub.com',
+        pass: process.env.SMTP_PASS || 'Varun$2026'
+      }
+    });
+
+    const defaultPosterHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0; padding:0; background:#ffffff;">
+    <div style="text-align:center;">
+        <a href="https://omwhub.com/" target="_blank" style="display:block; text-decoration:none;">
+            <img
+                src="cid:omwposter"
+                alt="OMW - A new way to get things done"
+                style="
+                    width:100%;
+                    max-width:1024px;
+                    height:auto;
+                    display:block;
+                    margin:0 auto;
+                    border:0;
+                "
+            >
+        </a>
+    </div>
+</body>
+</html>
+`;
+
+    let posterPath = path.join(__dirname, 'public', 'omw-poster.png');
+    if (!fs.existsSync(posterPath)) {
+      posterPath = path.join(__dirname, 'omw-poster.png');
+    }
+    if (!fs.existsSync(posterPath)) {
+      const omwEmailPath = path.join(__dirname, '..', 'omw-email', 'image.png');
+      if (fs.existsSync(omwEmailPath)) {
+        posterPath = omwEmailPath;
+      }
+    }
+
+    const attachments = [];
+    if (fs.existsSync(posterPath)) {
+      attachments.push({
+        filename: 'omw-poster.png',
+        path: posterPath,
+        cid: 'omwposter'
+      });
+    }
+
+    const mailOptions = {
+      from: `"OMW!" <${process.env.SMTP_USER || 'marketing@omwhub.com'}>`,
+      to: validEmails.join(', '),
+      subject: subject || 'A new way to get things done — OMW!',
+      html: customHtml || defaultPosterHtml,
+      attachments: attachments
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('Bulk email sent successfully:', info.messageId);
+
+    if (req.user) {
+      logActivity(req.user.id, req.user.name, 'Send Bulk Email', `Sent email to ${validEmails.length} recipients`);
+    }
+
+    res.json({
+      success: true,
+      count: validEmails.length,
+      messageId: info.messageId,
+      message: `Successfully sent email to ${validEmails.length} recipients!`
+    });
+  } catch (err) {
+    console.error('Send bulk email error:', err);
+    res.status(500).json({ error: err.message || 'Failed to send bulk email via Hostinger SMTP' });
   }
 });
 

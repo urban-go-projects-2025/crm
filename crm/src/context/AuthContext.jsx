@@ -17,6 +17,13 @@ export const AuthProvider = ({ children }) => {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   const loadSession = async () => {
+    const hasSavedUser = !!localStorage.getItem('omw_user');
+    if (!hasSavedUser) {
+      setCurrentUser(null);
+      setIsAuthLoading(false);
+      return;
+    }
+
     try {
       const res = await fetchMe();
       if (res && res.user) {
@@ -27,11 +34,20 @@ export const AuthProvider = ({ children }) => {
         localStorage.removeItem('omw_user');
       }
     } catch (err) {
-      console.error('Session load error:', err);
-      // Only clear if 401 unauthenticated
-      if (err.message && err.message.includes('401')) {
+      const isUnauthenticated =
+        err.status === 401 ||
+        (err.message && (
+          err.message.includes('401') ||
+          err.message.includes('Access token required') ||
+          err.message.includes('Not authenticated') ||
+          err.message.includes('Invalid or expired token')
+        ));
+
+      if (isUnauthenticated) {
         setCurrentUser(null);
         localStorage.removeItem('omw_user');
+      } else {
+        console.error('Session load error:', err);
       }
     } finally {
       setIsAuthLoading(false);

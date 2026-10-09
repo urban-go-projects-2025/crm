@@ -10,7 +10,8 @@ const getHeaders = () => {
 };
 
 const apiFetch = (path, options = {}) => {
-  return fetch(apiUrl(path), {
+  const url = path.startsWith('/') ? apiUrl(path) : path;
+  return fetch(url, {
     headers: getHeaders(),
     credentials: 'include',
     ...options
@@ -22,14 +23,18 @@ const parseResponse = async (res, defaultError = 'Request failed') => {
   const isJson = contentType.includes('application/json');
 
   if (!res.ok) {
+    let errorMsg = defaultError;
     if (isJson) {
       const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.error || defaultError);
+      errorMsg = errorData.error || defaultError;
+    } else if (res.status === 405) {
+      errorMsg = 'HTTP 405 Method Not Allowed: Check Vercel backend route configuration.';
+    } else {
+      errorMsg = `${defaultError} (HTTP ${res.status})`;
     }
-    if (res.status === 405) {
-      throw new Error('HTTP 405 Method Not Allowed: Check Vercel backend route configuration.');
-    }
-    throw new Error(`${defaultError} (HTTP ${res.status})`);
+    const err = new Error(errorMsg);
+    err.status = res.status;
+    throw err;
   }
 
   if (!isJson) {
@@ -40,20 +45,19 @@ const parseResponse = async (res, defaultError = 'Request failed') => {
 };
 
 export const fetchDashboardStats = async () => {
-  const res = await fetch(apiUrl('/api/dashboard/stats'), { headers: getHeaders() });
+  const res = await apiFetch('/api/dashboard/stats');
   return parseResponse(res, 'Failed to fetch dashboard stats');
 };
 
 export const fetchCustomers = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(apiUrl(`/api/customers?${query}`), { headers: getHeaders() });
+  const res = await apiFetch(`/api/customers?${query}`);
   return parseResponse(res, 'Failed to fetch customers');
 };
 
 export const createCustomer = async (data) => {
-  const res = await fetch(apiUrl('/api/customers'), {
+  const res = await apiFetch('/api/customers', {
     method: 'POST',
-    headers: getHeaders(),
     body: JSON.stringify(data)
   });
   return parseResponse(res, 'Failed to create customer');
@@ -61,14 +65,13 @@ export const createCustomer = async (data) => {
 
 export const fetchWorkers = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(apiUrl(`/api/workers?${query}`), { headers: getHeaders() });
+  const res = await apiFetch(`/api/workers?${query}`);
   return parseResponse(res, 'Failed to fetch workers');
 };
 
 export const createWorker = async (data) => {
-  const res = await fetch(apiUrl('/api/workers'), {
+  const res = await apiFetch('/api/workers', {
     method: 'POST',
-    headers: getHeaders(),
     body: JSON.stringify(data)
   });
   return parseResponse(res, 'Failed to create worker');
@@ -76,23 +79,21 @@ export const createWorker = async (data) => {
 
 export const fetchBookings = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(apiUrl(`/api/bookings?${query}`), { headers: getHeaders() });
+  const res = await apiFetch(`/api/bookings?${query}`);
   return parseResponse(res, 'Failed to fetch bookings');
 };
 
 export const createBooking = async (data) => {
-  const res = await fetch(apiUrl('/api/bookings'), {
+  const res = await apiFetch('/api/bookings', {
     method: 'POST',
-    headers: getHeaders(),
     body: JSON.stringify(data)
   });
   return parseResponse(res, 'Failed to create booking');
 };
 
 export const updateBookingStatus = async (id, payload) => {
-  const res = await fetch(apiUrl(`/api/bookings/${id}/status`), {
+  const res = await apiFetch(`/api/bookings/${id}/status`, {
     method: 'PUT',
-    headers: getHeaders(),
     body: JSON.stringify(payload)
   });
   return parseResponse(res, 'Failed to update booking status');
@@ -100,40 +101,38 @@ export const updateBookingStatus = async (id, payload) => {
 
 export const fetchPayments = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
-  const res = await fetch(apiUrl(`/api/payments?${query}`), { headers: getHeaders() });
+  const res = await apiFetch(`/api/payments?${query}`);
   return parseResponse(res, 'Failed to fetch payments');
 };
 
 export const fetchSupportTickets = async () => {
-  const res = await fetch(apiUrl('/api/support-tickets'), { headers: getHeaders() });
+  const res = await apiFetch('/api/support-tickets');
   return parseResponse(res, 'Failed to fetch support tickets');
 };
 
 export const createSupportTicket = async (data) => {
-  const res = await fetch(apiUrl('/api/support-tickets'), {
+  const res = await apiFetch('/api/support-tickets', {
     method: 'POST',
-    headers: getHeaders(),
     body: JSON.stringify(data)
   });
   return parseResponse(res, 'Failed to create ticket');
 };
 
 export const resolveSupportTicket = async (id, resolutionNotes) => {
-  const res = await fetch(apiUrl(`/api/support-tickets/${id}/resolve`), {
+  const res = await apiFetch(`/api/support-tickets/${id}/resolve`, {
     method: 'PUT',
-    headers: getHeaders(),
     body: JSON.stringify({ resolutionNotes })
   });
   return parseResponse(res, 'Failed to resolve ticket');
 };
 
 export const fetchAnalytics = async () => {
-  const res = await fetch(apiUrl('/api/analytics'), { headers: getHeaders() });
+  const res = await apiFetch('/api/analytics');
   return parseResponse(res, 'Failed to fetch analytics');
 };
 
 export const triggerDatabaseSync = async () => {
-  const res = await fetch(apiUrl('/api/sync/trigger'), { method: 'POST', headers: getHeaders() });
+  const res = await apiFetch('/api/sync/trigger', { method: 'POST' });
   return parseResponse(res, 'Failed to sync database');
 };
 
@@ -165,122 +164,117 @@ export const fetchMe = async () => {
 };
 
 export const fetchLeaveRequests = async () => {
-  const res = await fetch(apiUrl(`/api/attendance/leaves?t=${Date.now()}`), { headers: getHeaders() });
+  const res = await apiFetch(`/api/attendance/leaves?t=${Date.now()}`);
   return parseResponse(res, 'Failed to fetch leave requests');
 };
 
 export const createLeaveRequest = async (leaveData) => {
-  const res = await fetch(apiUrl('/api/attendance/leaves'), {
+  const res = await apiFetch('/api/attendance/leaves', {
     method: 'POST',
-    headers: getHeaders(),
     body: JSON.stringify(leaveData)
   });
   return parseResponse(res, 'Failed to create leave request');
 };
 
 export const updateLeaveStatus = async (id, status) => {
-  const res = await fetch(apiUrl(`/api/attendance/leaves/${id}/status`), {
+  const res = await apiFetch(`/api/attendance/leaves/${id}/status`, {
     method: 'PUT',
-    headers: getHeaders(),
     body: JSON.stringify({ status })
   });
   return parseResponse(res, 'Failed to update leave status');
 };
 
 export const fetchAttendanceLogs = async () => {
-  const res = await fetch(apiUrl(`/api/attendance/logs?t=${Date.now()}`), { headers: getHeaders() });
+  const res = await apiFetch(`/api/attendance/logs?t=${Date.now()}`);
   return parseResponse(res, 'Failed to fetch attendance logs');
 };
 
 export const markAttendance = async (data) => {
-  const res = await fetch(apiUrl('/api/attendance/mark'), {
+  const res = await apiFetch('/api/attendance/mark', {
     method: 'POST',
-    headers: getHeaders(),
     body: JSON.stringify(data)
   });
   return parseResponse(res, 'Failed to mark attendance');
 };
 
 export const updateWorkDescription = async (logId, workDescription) => {
-  const res = await fetch(apiUrl(`/api/attendance/logs/${logId}/work-description`), {
+  const res = await apiFetch(`/api/attendance/logs/${logId}/work-description`, {
     method: 'PUT',
-    headers: getHeaders(),
     body: JSON.stringify({ workDescription })
   });
   return parseResponse(res, 'Failed to update work description');
 };
 
 export const fetchCrmUsers = async () => {
-  const res = await fetch(apiUrl('/api/crm-users'), { headers: getHeaders() });
+  const res = await apiFetch('/api/crm-users');
   return parseResponse(res, 'Failed to fetch CRM users');
 };
 
 export const createCrmUser = async (data) => {
-  const res = await fetch(apiUrl('/api/crm-users'), {
+  const res = await apiFetch('/api/crm-users', {
     method: 'POST',
-    headers: getHeaders(),
     body: JSON.stringify(data)
   });
   return parseResponse(res, 'Failed to create CRM user');
 };
 
 export const updateCrmUser = async (id, data) => {
-  const res = await fetch(apiUrl(`/api/crm-users/${id}`), {
+  const res = await apiFetch(`/api/crm-users/${id}`, {
     method: 'PUT',
-    headers: getHeaders(),
     body: JSON.stringify(data)
   });
   return parseResponse(res, 'Failed to update CRM user');
 };
 
 export const deleteCrmUser = async (id) => {
-  const res = await fetch(apiUrl(`/api/crm-users/${id}`), {
-    method: 'DELETE',
-    headers: getHeaders()
+  const res = await apiFetch(`/api/crm-users/${id}`, {
+    method: 'DELETE'
   });
   return parseResponse(res, 'Failed to delete CRM user');
 };
 
 export const fetchActivityLogs = async (userId) => {
-  const res = await fetch(apiUrl(`/api/activity-logs/${userId}?t=${Date.now()}`), { headers: getHeaders() });
+  const res = await apiFetch(`/api/activity-logs/${userId}?t=${Date.now()}`);
   return parseResponse(res, 'Failed to fetch activity logs');
 };
 
 export const fetchIndianHolidays = async (year) => {
-  const res = await fetch(apiUrl(`/api/holidays/IN/${year || new Date().getFullYear()}`), { headers: getHeaders() });
+  const res = await apiFetch(`/api/holidays/IN/${year || new Date().getFullYear()}`);
   return parseResponse(res, 'Failed to fetch Indian holidays');
 };
 
 export const fetchLeads = async () => {
-  const res = await fetch(apiUrl(`/api/leads?t=${Date.now()}`), { headers: getHeaders(), credentials: 'include' });
+  const res = await apiFetch(`/api/leads?t=${Date.now()}`);
   return parseResponse(res, 'Failed to fetch leads');
 };
 
 export const createLead = async (data) => {
-  const res = await fetch(apiUrl('/api/leads'), {
+  const res = await apiFetch('/api/leads', {
     method: 'POST',
-    headers: getHeaders(),
-    credentials: 'include',
     body: JSON.stringify(data)
   });
   return parseResponse(res, 'Failed to create lead');
 };
 
 export const updateLead = async (id, data) => {
-  const res = await fetch(apiUrl(`/api/leads/${id}`), {
+  const res = await apiFetch(`/api/leads/${id}`, {
     method: 'PUT',
-    headers: getHeaders(),
-    credentials: 'include',
     body: JSON.stringify(data)
   });
   return parseResponse(res, 'Failed to update lead');
 };
 
 export const deleteLead = async (id) => {
-  const res = await fetch(apiUrl(`/api/leads/${id}`), {
-    method: 'DELETE',
-    headers: getHeaders(),
-    credentials: 'include'
+  const res = await apiFetch(`/api/leads/${id}`, {
+    method: 'DELETE'
   });
   return parseResponse(res, 'Failed to delete lead');
+};
+
+export const sendBulkEmails = async (data) => {
+  const res = await apiFetch('/api/leads/send-email', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  });
+  return parseResponse(res, 'Failed to send bulk email');
 };

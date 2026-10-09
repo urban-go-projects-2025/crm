@@ -1,16 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { PhoneCall, PhoneOff, Trash2, ArrowLeft, Search, CheckCircle2, UserPlus, Eye, Phone, RefreshCw, Info, Lock } from 'lucide-react';
+import { PhoneCall, PhoneOff, Trash2, ArrowLeft, Search, CheckCircle2, UserPlus, Eye, Phone, RefreshCw, Info, Lock, Mail, Send, Check, Sparkles } from 'lucide-react';
 import { useSocket } from '../context/SocketContext';
-import { fetchLeads, createLead, deleteLead } from '../services/api';
+import { fetchLeads, createLead, deleteLead, sendBulkEmails } from '../services/api';
 
 export default function CreateLead({ onCancel, onSave }) {
   const socket = useSocket();
-  const [activeTab, setActiveTab] = useState('create'); // 'create' | 'view'
+  const [activeTab, setActiveTab] = useState('create'); // 'create' | 'view' | 'email'
   const [leadsList, setLeadsList] = useState([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMessage, setToastMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Bulk Email State Variables
+  const [rawEmails, setRawEmails] = useState('');
+  const [emailSubject, setEmailSubject] = useState('A new way to get things done — OMW!');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [emailSuccessInfo, setEmailSuccessInfo] = useState('');
 
   const initialFormState = {
     leadOwner: 'Sania',
@@ -181,6 +187,48 @@ export default function CreateLead({ onCancel, onSave }) {
     }
   };
 
+  const getParsedEmails = () => {
+    if (!rawEmails) return [];
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const items = rawEmails.split(/[\n,;]+/).map(e => e.trim()).filter(Boolean);
+    return Array.from(new Set(items.filter(e => emailRegex.test(e))));
+  };
+
+  const handleImportLeadEmails = () => {
+    const leadEmails = leadsList.map(l => l.email).filter(Boolean);
+    if (leadEmails.length === 0) {
+      showToast('No lead emails found in database.');
+      return;
+    }
+    setRawEmails(leadEmails.join('\n'));
+    showToast(`Imported ${leadEmails.length} lead emails from database!`);
+  };
+
+  const handleSendBulkEmail = async (e) => {
+    if (e) e.preventDefault();
+    const validList = getParsedEmails();
+    if (validList.length === 0) {
+      showToast('Please enter or paste at least one valid recipient email address!');
+      return;
+    }
+
+    try {
+      setIsSendingEmail(true);
+      setEmailSuccessInfo('');
+      const res = await sendBulkEmails({
+        recipients: validList,
+        subject: emailSubject || 'A new way to get things done — OMW!'
+      });
+      showToast(`Success! Email sent to ${res.count || validList.length} recipients.`);
+      setEmailSuccessInfo(`🎉 Successfully sent bulk email to ${res.count || validList.length} recipients via Hostinger SMTP!`);
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Failed to send bulk email.');
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
   const filteredLeads = leadsList.filter(l => {
     const fname = l.first_name || l.firstName || '';
     const lname = l.last_name || l.lastName || '';
@@ -303,14 +351,248 @@ export default function CreateLead({ onCancel, onSave }) {
             <Eye size={16} />
             <span>View Leads ({leadsList.length})</span>
           </button>
+
+          <button 
+            type="button"
+            onClick={() => setActiveTab('email')}
+            style={{
+              padding: '9px 18px',
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+              border: 'none',
+              background: activeTab === 'email' ? 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)' : '#F1F5F9',
+              color: activeTab === 'email' ? '#FFFFFF' : '#475569',
+              boxShadow: activeTab === 'email' ? '0 4px 12px rgba(2, 132, 199, 0.3)' : 'none',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              transition: 'all 0.2s ease'
+            }}
+          >
+            <Mail size={16} />
+            <span>Send Bulk Email</span>
+          </button>
         </div>
       </div>
 
       {/* Main Container Layout */}
       <div style={{ display: 'flex', gap: 24, alignItems: 'flex-start', position: 'relative' }}>
         
-        {/* Left Section: Lead Form Card or View Leads Data Table */}
-        {activeTab === 'view' ? (
+        {/* Left Section: Send Email Card, View Leads Table, or Lead Form */}
+        {activeTab === 'email' ? (
+          <div className="card-section" style={{ flex: 1, padding: 28, background: '#FFFFFF', borderRadius: 16, border: '1px solid #E2E8F0', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
+            
+            {/* Header Banner */}
+            <div style={{
+              background: 'linear-gradient(135deg, #F0F9FF 0%, #E0F2FE 100%)',
+              padding: '18px 20px',
+              borderRadius: 12,
+              marginBottom: 24,
+              borderLeft: '4px solid #0284C7',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: '#0F172A', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Mail size={20} color="#0284C7" />
+                  <span>Send Bulk Email (Hostinger SMTP Connected)</span>
+                </h3>
+                <p style={{ fontSize: 13, color: '#0369A1', margin: '4px 0 0' }}>
+                  Paste 100+ raw email addresses or import saved CRM database leads to send bulk marketing emails instantly.
+                </p>
+              </div>
+              <span style={{
+                background: '#0284C7',
+                color: '#FFFFFF',
+                fontSize: 12,
+                fontWeight: 700,
+                padding: '6px 14px',
+                borderRadius: 20,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6
+              }}>
+                <Sparkles size={14} />
+                marketing@omwhub.com
+              </span>
+            </div>
+
+            {/* Email Success Info Alert */}
+            {emailSuccessInfo && (
+              <div style={{
+                background: '#DCFCE7',
+                color: '#166534',
+                padding: '12px 16px',
+                borderRadius: 10,
+                marginBottom: 20,
+                fontSize: 14,
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                border: '1px solid #86EFAC'
+              }}>
+                <CheckCircle2 size={18} />
+                <span>{emailSuccessInfo}</span>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleSendBulkEmail}>
+              
+              {/* Recipient Emails Area with Import Button */}
+              <div className="form-group" style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <label style={{ fontWeight: 700, fontSize: 13, color: '#334155', margin: 0 }}>
+                    Paste Recipient Email Addresses (Comma, Newline, or Space Separated)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleImportLeadEmails}
+                    style={{
+                      background: '#F1F5F9',
+                      border: '1px solid #CBD5E1',
+                      color: '#0F172A',
+                      padding: '5px 12px',
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
+                    }}
+                  >
+                    <UserPlus size={14} />
+                    <span>Import All ({leadsList.length}) CRM Database Leads</span>
+                  </button>
+                </div>
+
+                <textarea
+                  rows={6}
+                  className="form-control"
+                  placeholder="Paste 100+ email addresses here... e.g.
+user1@gmail.com, user2@gmail.com
+user3@domain.com"
+                  value={rawEmails}
+                  onChange={(e) => setRawEmails(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: 14,
+                    borderRadius: 10,
+                    border: '1px solid #CBD5E1',
+                    fontSize: 14,
+                    fontFamily: 'monospace',
+                    minHeight: 140,
+                    resize: 'vertical'
+                  }}
+                />
+
+                {/* Email Counter Badge */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                  <span style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: getParsedEmails().length > 0 ? '#166534' : '#64748B',
+                    background: getParsedEmails().length > 0 ? '#DCFCE7' : '#F1F5F9',
+                    padding: '4px 10px',
+                    borderRadius: 12
+                  }}>
+                    {getParsedEmails().length > 0 ? `✅ ${getParsedEmails().length} Valid Recipient Email(s) Detected` : '0 Recipients Detected'}
+                  </span>
+                  {rawEmails && (
+                    <button
+                      type="button"
+                      onClick={() => setRawEmails('')}
+                      style={{ background: 'none', border: 'none', color: '#EF4444', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Clear Email List
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Email Subject Field */}
+              <div className="form-group" style={{ marginBottom: 24 }}>
+                <label style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 6, display: 'block' }}>
+                  Email Subject Line
+                </label>
+                <input
+                  type="text"
+                  required
+                  className="form-control"
+                  placeholder="e.g. A new way to get things done — OMW!"
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  style={{ padding: '10px 14px', borderRadius: 8, border: '1px solid #CBD5E1', fontSize: 14, width: '100%' }}
+                />
+              </div>
+
+              {/* Poster Email Template Live Preview Box (Matching omw-email) */}
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ fontWeight: 700, fontSize: 13, color: '#334155', marginBottom: 8, display: 'block' }}>
+                  Live OMW Poster Email Preview (Exact omwemail Template)
+                </label>
+                <div style={{
+                  border: '1px solid #E2E8F0',
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  background: '#FFFFFF',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                }}>
+                  {/* Email Header Preview Bar */}
+                  <div style={{ background: '#F8FAFC', padding: '10px 16px', borderBottom: '1px solid #E2E8F0', fontSize: 12, color: '#475569' }}>
+                    <div><strong>From:</strong> "OMW!" &lt;marketing@omwhub.com&gt;</div>
+                    <div><strong>Subject:</strong> {emailSubject || 'A new way to get things done — OMW!'}</div>
+                  </div>
+                  {/* Poster Image Preview matching omwemail */}
+                  <div style={{ padding: 20, textAlign: 'center', background: '#FFFFFF' }}>
+                    <a href="https://omwhub.com/" target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+                      <img 
+                        src="/omw-poster.png" 
+                        alt="OMW - A new way to get things done" 
+                        style={{ maxWidth: '100%', width: 700, height: 'auto', borderRadius: 8, border: '1px solid #E2E8F0' }}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = 'https://omwhub.com/assets/poster.png';
+                        }}
+                      />
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit Bar */}
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', paddingTop: 16, borderTop: '1px solid #E2E8F0' }}>
+                <button
+                  type="submit"
+                  disabled={isSendingEmail || getParsedEmails().length === 0}
+                  style={{
+                    padding: '12px 32px',
+                    borderRadius: 8,
+                    fontSize: 14,
+                    fontWeight: 700,
+                    background: isSendingEmail ? '#94A3B8' : 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)',
+                    color: '#FFF',
+                    border: 'none',
+                    cursor: isSendingEmail || getParsedEmails().length === 0 ? 'not-allowed' : 'pointer',
+                    boxShadow: '0 4px 14px rgba(2, 132, 199, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8
+                  }}
+                >
+                  <Send size={16} />
+                  <span>{isSendingEmail ? `Sending Emails to ${getParsedEmails().length} Recipients...` : `Send Bulk Email (${getParsedEmails().length})`}</span>
+                </button>
+              </div>
+
+            </form>
+          </div>
+        ) : activeTab === 'view' ? (
           <div className="card-section" style={{ flex: 1, padding: 24 }}>
             {/* Search and Refresh Bar */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 16 }}>
