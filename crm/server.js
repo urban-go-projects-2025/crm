@@ -351,6 +351,11 @@ app.post('/api/auth/impersonate', authenticateToken, async (req, res) => {
 
     logActivity(originalAdminId, req.user.email, 'Switch User', `Admin switched account view to user ${targetUser.name} (${targetUser.id})`);
 
+    let targetPerms = targetUser.permissions;
+    if (typeof targetPerms === 'string') {
+      try { targetPerms = JSON.parse(targetPerms); } catch (e) { targetPerms = []; }
+    }
+
     res.cookie('omw_crm_token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -364,7 +369,7 @@ app.post('/api/auth/impersonate', authenticateToken, async (req, res) => {
         email: targetUser.email,
         role: targetUser.role,
         isAdmin: isTargetAdmin,
-        permissions: targetUser.permissions,
+        permissions: Array.isArray(targetPerms) ? targetPerms : [],
         avatar: targetUser.avatar,
         originalAdminId: originalAdminId,
         isImpersonating: originalAdminId !== targetUser.id,
@@ -410,6 +415,12 @@ app.get('/api/auth/me', authenticateToken, async (req, res) => {
     } else {
       user.canSwitchUser = false;
     }
+
+    let perms = user.permissions;
+    if (typeof perms === 'string') {
+      try { perms = JSON.parse(perms); } catch (e) { perms = []; }
+    }
+    user.permissions = Array.isArray(perms) ? perms : [];
 
     res.json({ user });
   } catch (err) {

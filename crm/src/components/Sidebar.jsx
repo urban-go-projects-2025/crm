@@ -10,7 +10,8 @@ import {
   Bell, 
   BarChart3, 
   Timer,
-  ShieldCheck
+  ShieldCheck,
+  UserPlus
 } from 'lucide-react';
 
 const menuItems = [
@@ -23,6 +24,7 @@ const menuItems = [
   { id: 'notifications', label: 'Notification', icon: Bell, iconColor: '#F59E0B' },
   { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
   { id: 'attendance', label: 'Attendance & Time', icon: Timer },
+  { id: 'create-lead', label: 'Lead Management', icon: UserPlus, iconColor: '#F97316' },
   { id: 'users', label: 'User & Staff Access', icon: ShieldCheck, iconColor: '#EF4444' }
 ];
 

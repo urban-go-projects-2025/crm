@@ -73,13 +73,16 @@ export default function Header({
             <span>OMW DB Synced</span>
           </button>
 
-          <button 
-            className="icon-btn" 
-            title="Create Lead & Quick Customer Calling"
-            onClick={onOpenCreateLead}
-          >
-            <LayoutGrid size={18} />
-          </button>
+          {/* Only show Lead Management icon if user has create-lead permission or is Admin */}
+          {(currentUser?.isAdmin || (currentUser?.permissions || []).includes('create-lead')) && (
+            <button 
+              className="icon-btn" 
+              title="Create Lead & Quick Customer Calling"
+              onClick={onOpenCreateLead}
+            >
+              <LayoutGrid size={18} />
+            </button>
+          )}
 
           {/* Impersonation Banner Pill if Admin is viewing as another user */}
           {currentUser?.isImpersonating && (

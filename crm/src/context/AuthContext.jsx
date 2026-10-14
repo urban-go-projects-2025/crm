@@ -16,6 +16,15 @@ export const AuthProvider = ({ children }) => {
   });
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
+  const normalizeUser = (user) => {
+    if (!user) return null;
+    let perms = user.permissions;
+    if (typeof perms === 'string') {
+      try { perms = JSON.parse(perms); } catch (e) { perms = []; }
+    }
+    return { ...user, permissions: Array.isArray(perms) ? perms : [] };
+  };
+
   const loadSession = async () => {
     const hasSavedUser = !!localStorage.getItem('omw_user');
     if (!hasSavedUser) {
@@ -27,8 +36,9 @@ export const AuthProvider = ({ children }) => {
     try {
       const res = await fetchMe();
       if (res && res.user) {
-        setCurrentUser(res.user);
-        localStorage.setItem('omw_user', JSON.stringify(res.user));
+        const normalized = normalizeUser(res.user);
+        setCurrentUser(normalized);
+        localStorage.setItem('omw_user', JSON.stringify(normalized));
       } else {
         setCurrentUser(null);
         localStorage.removeItem('omw_user');
@@ -61,9 +71,10 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password, type) => {
     const res = await apiLoginUser(email, password, type);
     if (res && res.user) {
-      setCurrentUser(res.user);
-      localStorage.setItem('omw_user', JSON.stringify(res.user));
-      return res.user;
+      const normalized = normalizeUser(res.user);
+      setCurrentUser(normalized);
+      localStorage.setItem('omw_user', JSON.stringify(normalized));
+      return normalized;
     }
     throw new Error('Login failed');
   };
@@ -71,9 +82,10 @@ export const AuthProvider = ({ children }) => {
   const switchUser = async (userId) => {
     const res = await apiSwitchUser(userId);
     if (res && res.user) {
-      setCurrentUser(res.user);
-      localStorage.setItem('omw_user', JSON.stringify(res.user));
-      return res.user;
+      const normalized = normalizeUser(res.user);
+      setCurrentUser(normalized);
+      localStorage.setItem('omw_user', JSON.stringify(normalized));
+      return normalized;
     }
     throw new Error('Switch user failed');
   };
