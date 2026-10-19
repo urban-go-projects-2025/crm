@@ -128,11 +128,30 @@ const initializeDB = async () => {
     try {
       await pool.query('ALTER TABLE crm_users ADD COLUMN category VARCHAR(255)');
     } catch (e) {}
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS staff_activity_tracking (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id VARCHAR(50) NOT NULL,
+        user_name VARCHAR(255) NOT NULL,
+        date DATE NOT NULL,
+        active_seconds INT DEFAULT 0,
+        idle_seconds INT DEFAULT 0,
+        current_status VARCHAR(20) DEFAULT 'offline',
+        first_login_time VARCHAR(50),
+        last_active_time VARCHAR(50),
+        last_heartbeat TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_user_date (user_id, date)
+      )
+    `);
+    console.log('staff_activity_tracking table verified');
     
     // Create Performance Indexes for Fast Queries
     const indexQueries = [
       "CREATE INDEX idx_crm_users_email ON crm_users (email)",
       "CREATE INDEX idx_crm_users_status ON crm_users (status)",
+      "CREATE INDEX idx_staff_activity_date ON staff_activity_tracking (date)",
+      "CREATE INDEX idx_staff_activity_user ON staff_activity_tracking (user_id)",
       "CREATE INDEX idx_attendance_logs_date ON attendance_logs (date)",
       "CREATE INDEX idx_attendance_logs_worker_id ON attendance_logs (worker_id)",
       "CREATE INDEX idx_attendance_logs_status ON attendance_logs (status)",
@@ -382,13 +401,26 @@ app.post('/api/auth/impersonate', authenticateToken, async (req, res) => {
   }
 });
 
+// Helper to get local date string YYYY-MM-DD
+const getLocalDateString = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // Logout
 app.post('/api/auth/logout', (req, res) => {
   const token = req.cookies.omw_crm_token;
   if (token) {
-    jwt.verify(token, JWT_SECRET, (err, user) => {
+    jwt.verify(token, JWT_SECRET, async (err, user) => {
       if (!err && user) {
         logActivity(user.id, user.email, 'Logout', 'User logged out');
+        try {
+          const today = getLocalDateString(new Date());
+          await pool.query('UPDATE staff_activity_tracking SET current_status = "offline" WHERE user_id = ? AND date = ?', [user.id, today]);
+          if (req.app.get('io')) { req.app.get('io').emit('staff_activity_updated', { userId: user.id, status: 'offline' }); }
+        } catch (e) {}
       }
     });
   }
@@ -396,6 +428,107 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 app.use(authenticateToken);
+
+// Staff Activity Heartbeat Tracking
+app.post('/api/activity/heartbeat', authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userName = req.user.name || req.user.email;
+    const { status } = req.body;
+    const safeStatus = status === 'active' ? 'active' : 'idle';
+    const activeSec = safeStatus === 'active' ? 30 : 0;
+    const idleSec = safeStatus === 'idle' ? 30 : 0;
+
+    const now = new Date();
+    const today = getLocalDateString(now);
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+    await pool.query(`
+      INSERT INTO staff_activity_tracking 
+        (user_id, user_name, date, active_seconds, idle_seconds, current_status, first_login_time, last_active_time, last_heartbeat)
+      VALUES 
+        (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+      ON DUPLICATE KEY UPDATE
+        user_name = VALUES(user_name),
+        active_seconds = active_seconds + VALUES(active_seconds),
+        idle_seconds = idle_seconds + VALUES(idle_seconds),
+        current_status = VALUES(current_status),
+        first_login_time = COALESCE(first_login_time, VALUES(first_login_time)),
+        last_active_time = IF(VALUES(current_status) = 'active', VALUES(last_active_time), last_active_time),
+        last_heartbeat = NOW()
+    `, [userId, userName, today, activeSec, idleSec, safeStatus, timeStr, timeStr]);
+
+    if (req.app.get('io')) {
+      req.app.get('io').emit('staff_activity_updated', { userId, status: safeStatus, date: today });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Activity heartbeat error:', err);
+    res.status(500).json({ error: 'Failed to record activity' });
+  }
+});
+
+// Staff Activity Daily Summary (Admin Only)
+app.get('/api/activity/summary', authenticateToken, async (req, res) => {
+  try {
+    if (!req.user || !req.user.isAdmin) {
+      return res.status(403).json({ error: 'Access restricted: Only administrators can view staff activity' });
+    }
+
+    const targetDate = req.query.date || getLocalDateString(new Date());
+
+    const [rows] = await pool.query(`
+      SELECT 
+        u.id as user_id, 
+        u.name as user_name, 
+        u.email, 
+        u.role, 
+        u.avatar, 
+        COALESCE(u.category, 'Staff') as category,
+        COALESCE(a.active_seconds, 0) as active_seconds,
+        COALESCE(a.idle_seconds, 0) as idle_seconds,
+        COALESCE(a.current_status, 'offline') as db_status,
+        a.first_login_time,
+        a.last_active_time,
+        a.last_heartbeat,
+        TIMESTAMPDIFF(SECOND, a.last_heartbeat, NOW()) as seconds_since_ping
+      FROM crm_users u
+      LEFT JOIN staff_activity_tracking a ON u.id = a.user_id AND a.date = ?
+      WHERE COALESCE(u.status, 'Active') = 'Active'
+      ORDER BY a.active_seconds DESC, u.name ASC
+    `, [targetDate]);
+
+    const staffSummary = rows.map(r => {
+      let liveStatus = r.db_status;
+      // Auto-mark offline if no heartbeat ping in past 90 seconds
+      if (liveStatus !== 'offline' && (r.seconds_since_ping === null || r.seconds_since_ping > 90)) {
+        liveStatus = 'offline';
+      }
+
+      return {
+        userId: r.user_id,
+        userName: r.user_name,
+        email: r.email,
+        role: r.role,
+        avatar: r.avatar || r.user_name.substring(0, 2).toUpperCase(),
+        category: r.category,
+        activeSeconds: r.active_seconds,
+        idleSeconds: r.idle_seconds,
+        totalSeconds: r.active_seconds + r.idle_seconds,
+        currentStatus: liveStatus,
+        firstLoginTime: r.first_login_time || '--',
+        lastActiveTime: r.last_active_time || '--',
+        lastHeartbeat: r.last_heartbeat
+      };
+    });
+
+    res.json({ date: targetDate, staff: staffSummary });
+  } catch (err) {
+    console.error('Fetch activity summary error:', err);
+    res.status(500).json({ error: 'Failed to fetch activity summary' });
+  }
+});
 
 // Get Current User (from cookie)
 app.get('/api/auth/me', authenticateToken, async (req, res) => {

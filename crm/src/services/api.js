@@ -278,3 +278,17 @@ export const sendBulkEmails = async (data) => {
   });
   return parseResponse(res, 'Failed to send bulk email');
 };
+
+export const sendActivityHeartbeat = async (status) => {
+  const res = await apiFetch('/api/activity/heartbeat', {
+    method: 'POST',
+    body: JSON.stringify({ status })
+  });
+  return parseResponse(res, 'Failed to record activity');
+};
+
+export const fetchStaffActivitySummary = async (date) => {
+  const query = date ? `?date=${date}` : '';
+  const res = await apiFetch(`/api/activity/summary${query}`);
+  return parseResponse(res, 'Failed to fetch activity summary');
+};

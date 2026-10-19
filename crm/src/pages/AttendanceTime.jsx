@@ -1,8 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
-import { Search, Plus, Inbox, Sun, ChevronLeft, ChevronRight, X, CheckCircle2, Check, XCircle, FileText, ClipboardList } from 'lucide-react';
-import { fetchLeaveRequests, createLeaveRequest, updateLeaveStatus, fetchCrmUsers, fetchAttendanceLogs, markAttendance, fetchWorkers, fetchIndianHolidays, updateWorkDescription } from '../services/api';
+import { 
+  Search, Plus, Inbox, Sun, ChevronLeft, ChevronRight, X, CheckCircle2, Check, XCircle, FileText, ClipboardList,
+  Activity, Clock, Monitor, RefreshCw, Zap, PauseCircle, Users, UserCheck, Calendar as CalendarIcon
+} from 'lucide-react';
+import { 
+  fetchLeaveRequests, createLeaveRequest, updateLeaveStatus, fetchCrmUsers, fetchAttendanceLogs, 
+  markAttendance, fetchWorkers, fetchIndianHolidays, updateWorkDescription, fetchStaffActivitySummary 
+} from '../services/api';
 import { useAuth } from '../context/AuthContext';
+
+function formatSecondsToHoursMins(totalSec) {
+  if (!totalSec || totalSec <= 0) return '0 mins';
+  if (totalSec < 60) return `${totalSec}s`;
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  if (hours === 0) return `${minutes} mins`;
+  if (minutes === 0) return `${hours} hrs`;
+  return `${hours} hrs ${minutes} mins`;
+}
 
 function calculateTotalHours(checkInStr, checkOutStr) {
   if (!checkInStr || !checkOutStr || checkInStr === '--' || checkOutStr === '--') {
@@ -104,6 +120,64 @@ export default function AttendanceTime() {
 
   const { currentUser } = useAuth();
   const today = new Date();
+  const getTodayLocalStr = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const todayStr = getTodayLocalStr();
+
+  // Primary Sub-Tab Switcher: 'workers' (Worker Attendance & Shifts) vs 'staff' (Staff Activity & Working Hours)
+  const [activeSubTab, setActiveSubTab] = useState('workers');
+  const [activityDate, setActivityDate] = useState(todayStr);
+  const [staffActivityList, setStaffActivityList] = useState([]);
+  const [isLoadingActivity, setIsLoadingActivity] = useState(false);
+  const [activitySearch, setActivitySearch] = useState('');
+  const [activityStatusFilter, setActivityStatusFilter] = useState('All');
+
+  const isSuperAdmin = !!currentUser?.isAdmin;
+  const currentSubTab = isSuperAdmin ? activeSubTab : 'workers';
+
+  const loadStaffActivity = async () => {
+    if (!currentUser?.isAdmin) return;
+    try {
+      setIsLoadingActivity(true);
+      const res = await fetchStaffActivitySummary(activityDate);
+      if (res && res.staff) {
+        setStaffActivityList(res.staff);
+      }
+    } catch (err) {
+      console.error('Failed to load staff activity:', err);
+    } finally {
+      setIsLoadingActivity(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentUser?.isAdmin) {
+      loadStaffActivity();
+    }
+  }, [activityDate, currentUser?.isAdmin]);
+
+  useEffect(() => {
+    if (!socket || !currentUser?.isAdmin) return;
+    const handleUpdate = () => {
+      loadStaffActivity();
+    };
+    socket.on('staff_activity_updated', handleUpdate);
+
+    const interval = setInterval(() => {
+      loadStaffActivity();
+    }, 30000);
+
+    return () => {
+      socket.off('staff_activity_updated', handleUpdate);
+      clearInterval(interval);
+    };
+  }, [socket, activityDate, currentUser?.isAdmin]);
+
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Statuses');
   const [dateFilter, setDateFilter] = useState('All Dates');
@@ -417,6 +491,28 @@ export default function AttendanceTime() {
     return matchesUser && matchesSearch && matchesStatus && matchesDate;
   });
 
+  const displayStaffList = currentUser?.isAdmin 
+    ? staffActivityList 
+    : staffActivityList.filter(s => s.userId === currentUser?.id || s.email === currentUser?.email);
+
+  const filteredStaffActivity = displayStaffList.filter(s => {
+    const matchesSearch = !activitySearch || 
+      (s.userName && s.userName.toLowerCase().includes(activitySearch.toLowerCase())) ||
+      (s.role && s.role.toLowerCase().includes(activitySearch.toLowerCase())) ||
+      (s.email && s.email.toLowerCase().includes(activitySearch.toLowerCase()));
+    
+    const matchesStatus = activityStatusFilter === 'All' || s.currentStatus === activityStatusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const activeStaffCount = displayStaffList.filter(s => s.currentStatus === 'active').length;
+  const idleStaffCount = displayStaffList.filter(s => s.currentStatus === 'idle').length;
+  const totalActiveSecondsAll = displayStaffList.reduce((acc, s) => acc + (s.activeSeconds || 0), 0);
+  const totalShiftSecondsAll = displayStaffList.reduce((acc, s) => acc + (s.totalSeconds || 0), 0);
+  const overallProductivity = totalShiftSecondsAll > 0 
+    ? Math.round((totalActiveSecondsAll / totalShiftSecondsAll) * 100) 
+    : 0;
+
   return (
     <div className="page-content" style={{ paddingBottom: 32 }}>
       
@@ -443,7 +539,109 @@ export default function AttendanceTime() {
         </div>
       )}
 
-      {/* 2 Top Action Stat Cards (Clickable) - Only for Admin */}
+      {/* Primary Sub-Tabs Navigation - ONLY SHOWN TO SUPER ADMIN */}
+      {isSuperAdmin && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: '#FFFFFF',
+          padding: '8px 12px',
+          borderRadius: 14,
+          border: '1px solid #E2E8F0',
+          marginBottom: 20,
+          boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+          flexWrap: 'wrap',
+          gap: 12
+        }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => setActiveSubTab('workers')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 18px',
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                background: currentSubTab === 'workers' ? 'rgb(56, 74, 102)' : 'transparent',
+                color: currentSubTab === 'workers' ? '#FFFFFF' : '#64748B',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <UserCheck size={16} />
+              <span>Worker Attendance & Shifts</span>
+            </button>
+
+            <button
+              onClick={() => setActiveSubTab('staff')}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: '10px 18px',
+                borderRadius: 10,
+                fontSize: 13,
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+                background: currentSubTab === 'staff' ? 'rgb(56, 74, 102)' : 'transparent',
+                color: currentSubTab === 'staff' ? '#FFFFFF' : '#64748B',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              <Activity size={16} />
+              <span>Staff Activity & Working Hours</span>
+              <span style={{
+                background: currentSubTab === 'staff' ? 'rgba(255,255,255,0.2)' : '#DCFCE7',
+                color: currentSubTab === 'staff' ? '#FFFFFF' : '#15803D',
+                fontSize: 11,
+                padding: '2px 8px',
+                borderRadius: 12,
+                fontWeight: 800
+              }}>
+                LIVE 🟢
+              </span>
+            </button>
+          </div>
+
+          {currentSubTab === 'staff' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 12, color: '#64748B', fontWeight: 600 }}>Filter Date:</span>
+              <input 
+                type="date"
+                value={activityDate}
+                onChange={(e) => setActivityDate(e.target.value)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 8,
+                  border: '1px solid #CBD5E1',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: '#1E293B',
+                  cursor: 'pointer'
+                }}
+              />
+              {activityDate !== todayStr && (
+                <button 
+                  className="btn-secondary"
+                  onClick={() => setActivityDate(todayStr)}
+                  style={{ padding: '6px 10px', fontSize: 11, cursor: 'pointer' }}
+                >
+                  Today
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {currentSubTab === 'workers' && (
+        <>
+          {/* 2 Top Action Stat Cards (Clickable) - Only for Admin */}
       {!!currentUser?.isAdmin && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
           <div 
@@ -925,6 +1123,399 @@ export default function AttendanceTime() {
           </table>
         </div>
       </div>
+      </>
+      )}
+
+      {/* TAB 2: STAFF LIVE ACTIVITY & WORKING HOURS - STRICTLY SUPER ADMIN ONLY */}
+      {isSuperAdmin && currentSubTab === 'staff' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Top Stat Cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+            {/* Card 1: Total Staff */}
+            <div className="stat-card" style={{ borderLeft: '4px solid rgb(56, 74, 102)' }}>
+              <div className="stat-info">
+                <span className="stat-title" style={{ color: '#64748B', fontWeight: 700 }}>Total Monitored Staff</span>
+                <span className="stat-value" style={{ fontSize: 24, color: '#0F172A' }}>
+                  {staffActivityList.length} <span style={{ fontSize: 13, color: '#64748B', fontWeight: 600 }}>Staff Members</span>
+                </span>
+                <span className="stat-subtext" style={{ color: '#64748B', fontSize: 12 }}>Active CRM Accounts</span>
+              </div>
+              <div className="stat-icon" style={{ background: '#F1F5F9' }}>
+                <Users size={22} color="rgb(56, 74, 102)" />
+              </div>
+            </div>
+
+            {/* Card 2: Active Now */}
+            <div className="stat-card" style={{ borderLeft: '4px solid #10B981' }}>
+              <div className="stat-info">
+                <span className="stat-title" style={{ color: '#065F46', fontWeight: 700 }}>Currently Active Now</span>
+                <span className="stat-value" style={{ fontSize: 24, color: '#047857', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{
+                    width: 10,
+                    height: 10,
+                    borderRadius: '50%',
+                    background: '#10B981',
+                    display: 'inline-block',
+                    boxShadow: '0 0 0 4px rgba(16, 185, 129, 0.2)'
+                  }}></span>
+                  {activeStaffCount} <span style={{ fontSize: 13, color: '#059669', fontWeight: 600 }}>Working</span>
+                </span>
+                <span className="stat-subtext" style={{ color: '#10B981', fontSize: 12, fontWeight: 600 }}>Active in CRM tab</span>
+              </div>
+              <div className="stat-icon" style={{ background: '#DCFCE7' }}>
+                <Zap size={22} color="#10B981" />
+              </div>
+            </div>
+
+            {/* Card 3: Away / Idle */}
+            <div className="stat-card" style={{ borderLeft: '4px solid #F59E0B' }}>
+              <div className="stat-info">
+                <span className="stat-title" style={{ color: '#92400E', fontWeight: 700 }}>Away / Inactive</span>
+                <span className="stat-value" style={{ fontSize: 24, color: '#B45309' }}>
+                  {idleStaffCount} <span style={{ fontSize: 13, color: '#D97706', fontWeight: 600 }}>Away</span>
+                </span>
+                <span className="stat-subtext" style={{ color: '#D97706', fontSize: 12 }}>Idle / Tab Minimized</span>
+              </div>
+              <div className="stat-icon" style={{ background: '#FEF3C7' }}>
+                <PauseCircle size={22} color="#F59E0B" />
+              </div>
+            </div>
+
+            {/* Card 4: Total Active Hours */}
+            <div className="stat-card" style={{ borderLeft: '4px solid #3B82F6' }}>
+              <div className="stat-info">
+                <span className="stat-title" style={{ color: '#1E40AF', fontWeight: 700 }}>Total Active Hours Logged</span>
+                <span className="stat-value" style={{ fontSize: 24, color: '#1D4ED8' }}>
+                  {formatSecondsToHoursMins(totalActiveSecondsAll)}
+                </span>
+                <span className="stat-subtext" style={{ color: '#3B82F6', fontSize: 12, fontWeight: 600 }}>
+                  Team Efficiency: {overallProductivity}%
+                </span>
+              </div>
+              <div className="stat-icon" style={{ background: '#EFF6FF' }}>
+                <Clock size={22} color="#3B82F6" />
+              </div>
+            </div>
+          </div>
+
+          {/* Main Table Card Section */}
+          <div className="card-section">
+            <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <h3 style={{ fontSize: 18, fontWeight: 800, color: '#0F172A', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Monitor size={20} color="rgb(56, 74, 102)" />
+                  Staff Work Hours & Live Activity Breakdown
+                </h3>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748B' }}>
+                  Real-time automated tracking: Active working time (mouse & keyboard input) vs Inactive/Away time
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                {/* Search box */}
+                <div style={{ position: 'relative', width: 200 }}>
+                  <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94A3B8' }} />
+                  <input 
+                    type="text"
+                    className="form-control"
+                    placeholder="Search staff..."
+                    value={activitySearch}
+                    onChange={(e) => setActivitySearch(e.target.value)}
+                    style={{ paddingLeft: 32, fontSize: 12, height: 36 }}
+                  />
+                </div>
+
+                {/* Status Filter */}
+                <select
+                  className="form-control"
+                  value={activityStatusFilter}
+                  onChange={(e) => setActivityStatusFilter(e.target.value)}
+                  style={{ fontSize: 12, height: 36, width: 140 }}
+                >
+                  <option value="All">All Statuses</option>
+                  <option value="active">Active Now 🟢</option>
+                  <option value="idle">Away / Idle 🟡</option>
+                  <option value="offline">Offline ⚪</option>
+                </select>
+
+                {/* Refresh Button */}
+                <button
+                  className="btn-secondary"
+                  onClick={loadStaffActivity}
+                  style={{ height: 36, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}
+                  title="Refresh Live Data"
+                >
+                  <RefreshCw size={14} className={isLoadingActivity ? 'animate-spin' : ''} />
+                  <span>Refresh</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="table-responsive">
+              <table className="custom-table">
+                <thead>
+                  <tr>
+                    <th>Staff Member</th>
+                    <th>Role & Category</th>
+                    <th>Live Status</th>
+                    <th>First Login</th>
+                    <th>Last Active</th>
+                    <th style={{ color: '#047857' }}>Active Working Hours</th>
+                    <th style={{ color: '#B45309' }}>Inactive / Idle Time</th>
+                    <th>Total Shift Hours</th>
+                    <th style={{ minWidth: 160 }}>Productivity Ratio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredStaffActivity.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} style={{ textAlign: 'center', padding: 40, color: '#94A3B8' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                          <Inbox size={32} color="#CBD5E1" />
+                          <span style={{ fontSize: 14, fontWeight: 600 }}>No staff activity recorded for {activityDate}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredStaffActivity.map((member) => {
+                      const activeHoursFormatted = formatSecondsToHoursMins(member.activeSeconds);
+                      const idleHoursFormatted = formatSecondsToHoursMins(member.idleSeconds);
+                      const totalHoursFormatted = formatSecondsToHoursMins(member.totalSeconds);
+                      const productivityPercent = member.totalSeconds > 0 
+                        ? Math.round((member.activeSeconds / member.totalSeconds) * 100) 
+                        : 0;
+
+                      return (
+                        <tr key={member.userId}>
+                          {/* Member info */}
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <div style={{ position: 'relative' }}>
+                                <div style={{
+                                  width: 36,
+                                  height: 36,
+                                  borderRadius: '50%',
+                                  background: 'rgb(56, 74, 102)',
+                                  color: '#FFFFFF',
+                                  fontWeight: 800,
+                                  fontSize: 12,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}>
+                                  {member.avatar}
+                                </div>
+                                <span style={{
+                                  position: 'absolute',
+                                  bottom: 0,
+                                  right: 0,
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: '50%',
+                                  background: member.currentStatus === 'active' ? '#10B981' : member.currentStatus === 'idle' ? '#F59E0B' : '#94A3B8',
+                                  border: '2px solid #FFFFFF'
+                                }}></span>
+                              </div>
+                              <div>
+                                <span style={{ fontWeight: 700, color: '#0F172A', display: 'block', fontSize: 13 }}>
+                                  {member.userName}
+                                </span>
+                                <span style={{ fontSize: 11, color: '#64748B' }}>
+                                  {member.email}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Role & Category */}
+                          <td>
+                            <span style={{ fontWeight: 600, color: '#1E293B', display: 'block', fontSize: 12 }}>
+                              {member.role || 'Staff'}
+                            </span>
+                            <span style={{
+                              display: 'inline-block',
+                              marginTop: 2,
+                              fontSize: 10,
+                              padding: '1px 6px',
+                              borderRadius: 4,
+                              background: '#F1F5F9',
+                              color: '#475569',
+                              fontWeight: 700
+                            }}>
+                              {member.category}
+                            </span>
+                          </td>
+
+                          {/* Live Status Badge */}
+                          <td>
+                            {member.currentStatus === 'active' && (
+                              <span style={{
+                                background: '#DCFCE7',
+                                color: '#15803D',
+                                border: '1px solid #86EFAC',
+                                padding: '4px 10px',
+                                borderRadius: 20,
+                                fontSize: 11,
+                                fontWeight: 800,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6
+                              }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#16A34A' }}></span>
+                                Active Now 🟢
+                              </span>
+                            )}
+                            {member.currentStatus === 'idle' && (
+                              <span style={{
+                                background: '#FEF3C7',
+                                color: '#92400E',
+                                border: '1px solid #FCD34D',
+                                padding: '4px 10px',
+                                borderRadius: 20,
+                                fontSize: 11,
+                                fontWeight: 800,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6
+                              }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#D97706' }}></span>
+                                Away / Idle 🟡
+                              </span>
+                            )}
+                            {member.currentStatus === 'offline' && (
+                              <span style={{
+                                background: '#F1F5F9',
+                                color: '#64748B',
+                                border: '1px solid #E2E8F0',
+                                padding: '4px 10px',
+                                borderRadius: 20,
+                                fontSize: 11,
+                                fontWeight: 700,
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 6
+                              }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#94A3B8' }}></span>
+                                Offline ⚪
+                              </span>
+                            )}
+                          </td>
+
+                          {/* First Login */}
+                          <td>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
+                              {member.firstLoginTime}
+                            </span>
+                          </td>
+
+                          {/* Last Active */}
+                          <td>
+                            <span style={{ fontSize: 12, color: '#64748B' }}>
+                              {member.lastActiveTime}
+                            </span>
+                          </td>
+
+                          {/* Active Working Time */}
+                          <td>
+                            <span style={{
+                              fontSize: 13,
+                              fontWeight: 800,
+                              color: member.activeSeconds > 0 ? '#047857' : '#94A3B8',
+                              background: member.activeSeconds > 0 ? '#ECFDF5' : 'transparent',
+                              padding: '3px 8px',
+                              borderRadius: 6
+                            }}>
+                              {activeHoursFormatted}
+                            </span>
+                          </td>
+
+                          {/* Inactive / Idle Time */}
+                          <td>
+                            <span style={{
+                              fontSize: 13,
+                              fontWeight: 700,
+                              color: member.idleSeconds > 0 ? '#B45309' : '#94A3B8',
+                              background: member.idleSeconds > 0 ? '#FFFBEB' : 'transparent',
+                              padding: '3px 8px',
+                              borderRadius: 6
+                            }}>
+                              {idleHoursFormatted}
+                            </span>
+                          </td>
+
+                          {/* Total Shift Time */}
+                          <td>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: '#0F172A' }}>
+                              {totalHoursFormatted}
+                            </span>
+                          </td>
+
+                          {/* Productivity Progress Bar */}
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                                <span style={{ fontWeight: 700, color: productivityPercent >= 70 ? '#047857' : '#B45309' }}>
+                                  {productivityPercent}% Active
+                                </span>
+                                <span style={{ color: '#94A3B8', fontSize: 10 }}>
+                                  {member.totalSeconds > 0 ? `${100 - productivityPercent}% Idle` : ''}
+                                </span>
+                              </div>
+                              <div style={{
+                                height: 8,
+                                borderRadius: 4,
+                                background: '#E2E8F0',
+                                overflow: 'hidden',
+                                display: 'flex'
+                              }}>
+                                <div 
+                                  style={{ 
+                                    width: `${productivityPercent}%`, 
+                                    background: '#10B981', 
+                                    transition: 'width 0.4s ease' 
+                                  }} 
+                                  title={`Active: ${activeHoursFormatted}`}
+                                />
+                                <div 
+                                  style={{ 
+                                    width: `${100 - productivityPercent}%`, 
+                                    background: member.idleSeconds > 0 ? '#F59E0B' : 'transparent', 
+                                    transition: 'width 0.4s ease' 
+                                  }} 
+                                  title={`Idle: ${idleHoursFormatted}`}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Info notice box */}
+          <div style={{
+            background: '#F8FAFC',
+            border: '1px solid #E2E8F0',
+            borderRadius: 12,
+            padding: '12px 16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            fontSize: 12,
+            color: '#64748B'
+          }}>
+            <span style={{ fontSize: 18 }}>💡</span>
+            <span>
+              <strong>How Automated Time Tracking Works:</strong> Active hours log automatically as staff interacts with CRM (typing, clicking, or scrolling). If there is no activity for 2 minutes or the CRM tab is minimized, tracking automatically shifts to Inactive/Idle time.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Modal 1: Mark Attendance (Dark Navy Theme) */}
       {showMarkModal && (

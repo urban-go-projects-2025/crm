@@ -17,6 +17,7 @@ import Login from './pages/Login';
 import UserManagement from './pages/UserManagement';
 import { fetchDashboardStats, fetchCrmUsers } from './services/api';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
+import { useActivityTracker } from './hooks/useActivityTracker';
 
 const headerTitles = {
   dashboard: { title: 'Dashboard', subtitle: "Here's an overview of your business today." },
@@ -62,6 +63,7 @@ export default function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, isAuthLoading, logout, switchUser } = useAuth();
+  useActivityTracker(currentUser);
   
   const pathParts = location.pathname.split('/');
   const activeTab = pathParts.length > 2 && pathParts[2] !== '' ? pathParts[2] : 'dashboard';
